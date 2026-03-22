@@ -5,38 +5,38 @@
  * Types imported from shared/types.ts — single source of truth.
  */
 
-import { create } from 'zustand';
-import type { ChatSession, Message } from '@shared/types';
+import { create } from 'zustand'
+import type { ChatSession, Message } from '@shared/types'
 
 interface AppStore {
   // Sidecar
-  sidecarPort: number | null;
-  sidecarReady: boolean;
-  setSidecar: (port: number) => void;
+  sidecarPort: number | null
+  sidecarReady: boolean
+  setSidecar: (port: number) => void
 
   // Sessions
-  sessions: ChatSession[];
-  activeSessionId: string | null;
-  setSessions: (sessions: ChatSession[]) => void;
-  setActiveSession: (id: string | null) => void;
-  addSession: (session: ChatSession) => void;
-  removeSession: (id: string) => void;
+  sessions: ChatSession[]
+  activeSessionId: string | null
+  setSessions: (sessions: ChatSession[]) => void
+  setActiveSession: (id: string | null) => void
+  addSession: (session: ChatSession) => void
+  removeSession: (id: string) => void
 
   // Messages for active session
-  messages: Message[];
-  setMessages: (messages: Message[]) => void;
-  addMessage: (message: Message) => void;
+  messages: Message[]
+  setMessages: (messages: Message[]) => void
+  addMessage: (message: Message) => void
 
   // UI
-  theme: string;
-  setTheme: (theme: string) => void;
-  sidebarOpen: boolean;
-  toggleSidebar: () => void;
+  theme: string
+  setTheme: (theme: string) => void
+  sidebarOpen: boolean
+  toggleSidebar: () => void
 
   // Settings
-  settings: Record<string, string>;
-  setSettings: (settings: Record<string, string>) => void;
-  updateSetting: (key: string, value: string) => void;
+  settings: Record<string, string>
+  setSettings: (settings: Record<string, string>) => void
+  updateSetting: (key: string, value: string) => void
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -50,8 +50,7 @@ export const useAppStore = create<AppStore>((set) => ({
   activeSessionId: null,
   setSessions: (sessions) => set({ sessions }),
   setActiveSession: (id) => set({ activeSessionId: id }),
-  addSession: (session) =>
-    set((state) => ({ sessions: [session, ...state.sessions] })),
+  addSession: (session) => set((state) => ({ sessions: [session, ...state.sessions] })),
   removeSession: (id) =>
     set((state) => ({
       sessions: state.sessions.filter((s) => s.id !== id),
@@ -61,8 +60,7 @@ export const useAppStore = create<AppStore>((set) => ({
   // Messages
   messages: [],
   setMessages: (messages) => set({ messages }),
-  addMessage: (message) =>
-    set((state) => ({ messages: [...state.messages, message] })),
+  addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
 
   // UI
   theme: 'default',
@@ -75,4 +73,4 @@ export const useAppStore = create<AppStore>((set) => ({
   setSettings: (settings) => set({ settings }),
   updateSetting: (key, value) =>
     set((state) => ({ settings: { ...state.settings, [key]: value } })),
-}));
+}))

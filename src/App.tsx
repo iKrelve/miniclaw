@@ -1,31 +1,31 @@
-import { useState, useEffect } from 'react';
-import { AppShell } from './components/layout/AppShell';
-import { ErrorBoundary } from './components/layout/ErrorBoundary';
-import { OnboardingWizard } from './components/setup/OnboardingWizard';
-import { useTheme } from './hooks/useTheme';
-import { useSidecar } from './hooks/useSidecar';
-import './App.css';
+import { useState, useEffect } from 'react'
+import { AppShell } from './components/layout/AppShell'
+import { ErrorBoundary } from './components/layout/ErrorBoundary'
+import { OnboardingWizard } from './components/setup/OnboardingWizard'
+import { useTheme } from './hooks/useTheme'
+import { useSidecar } from './hooks/useSidecar'
+import './App.css'
 
 function App() {
-  useTheme();
-  const { baseUrl, ready } = useSidecar();
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [checked, setChecked] = useState(false);
+  useTheme()
+  const { baseUrl, ready } = useSidecar()
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [checked, setChecked] = useState(false)
 
   // Check if onboarding is needed
   useEffect(() => {
-    if (!baseUrl || !ready) return;
+    if (!baseUrl || !ready) return
     fetch(`${baseUrl}/settings/onboarding_complete`)
       .then((res) => res.json())
       .then((data) => {
-        setShowOnboarding(data.value !== 'true');
-        setChecked(true);
+        setShowOnboarding(data.value !== 'true')
+        setChecked(true)
       })
       .catch(() => {
-        setShowOnboarding(true);
-        setChecked(true);
-      });
-  }, [baseUrl, ready]);
+        setShowOnboarding(true)
+        setChecked(true)
+      })
+  }, [baseUrl, ready])
 
   // Loading state while sidecar connects
   if (!ready || !checked) {
@@ -36,7 +36,7 @@ function App() {
           <p className="text-sm text-zinc-500">正在启动小龙虾...</p>
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -47,7 +47,7 @@ function App() {
         <AppShell />
       )}
     </ErrorBoundary>
-  );
+  )
 }
 
-export default App;
+export default App

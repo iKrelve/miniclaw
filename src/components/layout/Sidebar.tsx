@@ -2,75 +2,90 @@
  * Sidebar — Session list with search, navigation, and context menu.
  */
 
-import { useEffect, useCallback, useState } from 'react';
-import { Plus, MessageSquare, Settings, FolderGit2, Puzzle, Sparkles, Terminal, FolderOpen, Search, Trash2 } from 'lucide-react';
-import { cn } from '../../lib/utils';
-import { useAppStore } from '../../stores';
-import { useSidecar } from '../../hooks/useSidecar';
-import { ConnectionStatus } from './ConnectionStatus';
+import { useEffect, useCallback, useState } from 'react'
+import {
+  Plus,
+  MessageSquare,
+  Settings,
+  FolderGit2,
+  Puzzle,
+  Sparkles,
+  Terminal,
+  FolderOpen,
+  Search,
+  Trash2,
+} from 'lucide-react'
+import { cn } from '../../lib/utils'
+import { useAppStore } from '../../stores'
+import { useSidecar } from '../../hooks/useSidecar'
+import { ConnectionStatus } from './ConnectionStatus'
 
 interface SidebarProps {
-  onNavigate: (view: string) => void;
-  currentView: string;
+  onNavigate: (view: string) => void
+  currentView: string
 }
 
 export function Sidebar({ onNavigate, currentView }: SidebarProps) {
-  const { baseUrl } = useSidecar();
-  const { sessions, activeSessionId, setSessions, setActiveSession, addSession, removeSession } = useAppStore();
-  const [search, setSearch] = useState('');
-  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const { baseUrl } = useSidecar()
+  const { sessions, activeSessionId, setSessions, setActiveSession, addSession, removeSession } =
+    useAppStore()
+  const [search, setSearch] = useState('')
+  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
 
   // Load sessions on mount
   useEffect(() => {
-    if (!baseUrl) return;
+    if (!baseUrl) return
     fetch(`${baseUrl}/sessions`)
       .then((res) => res.json())
       .then((data) => setSessions(data.sessions || []))
-      .catch(() => {});
-  }, [baseUrl, setSessions]);
+      .catch(() => {})
+  }, [baseUrl, setSessions])
 
   const handleNewChat = useCallback(async () => {
-    if (!baseUrl) return;
+    if (!baseUrl) return
     try {
       const res = await fetch(`${baseUrl}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ working_directory: '~' }),
-      });
-      const data = await res.json();
+      })
+      const data = await res.json()
       if (data.session) {
-        addSession(data.session);
-        setActiveSession(data.session.id);
-        onNavigate('chat');
+        addSession(data.session)
+        setActiveSession(data.session.id)
+        onNavigate('chat')
       }
     } catch {
       // error
     }
-  }, [baseUrl, addSession, setActiveSession, onNavigate]);
+  }, [baseUrl, addSession, setActiveSession, onNavigate])
 
-  const handleDeleteSession = useCallback(async (id: string) => {
-    if (!baseUrl) return;
-    try {
-      await fetch(`${baseUrl}/sessions/${id}`, { method: 'DELETE' });
-      removeSession(id);
-      setContextMenu(null);
-    } catch {
-      // error
-    }
-  }, [baseUrl, removeSession]);
+  const handleDeleteSession = useCallback(
+    async (id: string) => {
+      if (!baseUrl) return
+      try {
+        await fetch(`${baseUrl}/sessions/${id}`, { method: 'DELETE' })
+        removeSession(id)
+        setContextMenu(null)
+      } catch {
+        // error
+      }
+    },
+    [baseUrl, removeSession],
+  )
 
   const handleContextMenu = useCallback((e: React.MouseEvent, id: string) => {
-    e.preventDefault();
-    setContextMenu({ id, x: e.clientX, y: e.clientY });
-  }, []);
+    e.preventDefault()
+    setContextMenu({ id, x: e.clientX, y: e.clientY })
+  }, [])
 
   // Close context menu on click outside
   useEffect(() => {
-    if (!contextMenu) return;
-    const handler = () => setContextMenu(null);
-    window.addEventListener('click', handler);
-    return () => window.removeEventListener('click', handler);
-  }, [contextMenu]);
+    if (!contextMenu) return
+    const handler = () => setContextMenu(null)
+    window.addEventListener('click', handler)
+    return () => window.removeEventListener('click', handler)
+  }, [contextMenu])
 
   const navItems = [
     { id: 'chat', icon: MessageSquare, label: '对话' },
@@ -80,11 +95,11 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
     { id: 'skills', icon: Sparkles, label: '技能' },
     { id: 'terminal', icon: Terminal, label: '终端' },
     { id: 'settings', icon: Settings, label: '设置' },
-  ];
+  ]
 
   const filteredSessions = sessions.filter(
     (s) => !search || s.title.toLowerCase().includes(search.toLowerCase()),
-  );
+  )
 
   return (
     <div className="w-64 flex flex-col bg-zinc-50 dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800">
@@ -94,7 +109,11 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
           <span className="text-xl">🦞</span>
           <span className="font-semibold text-zinc-800 dark:text-zinc-200">小龙虾</span>
         </div>
-        <button onClick={handleNewChat} className="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors" title="新对话">
+        <button
+          onClick={handleNewChat}
+          className="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+          title="新对话"
+        >
           <Plus size={18} className="text-zinc-600 dark:text-zinc-400" />
         </button>
       </div>
@@ -140,7 +159,10 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
         {filteredSessions.map((session) => (
           <button
             key={session.id}
-            onClick={() => { setActiveSession(session.id); onNavigate('chat'); }}
+            onClick={() => {
+              setActiveSession(session.id)
+              onNavigate('chat')
+            }}
             onContextMenu={(e) => handleContextMenu(e, session.id)}
             className={cn(
               'w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors',
@@ -176,5 +198,5 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
         </div>
       )}
     </div>
-  );
+  )
 }

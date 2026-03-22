@@ -4,30 +4,30 @@
  * Code blocks use a simple syntax-highlighted <pre> (Shiki can be added later for full theme support).
  */
 
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
-import { cn } from '../../lib/utils';
-import { Copy, Check } from 'lucide-react';
-import { useState, useCallback, type ComponentPropsWithoutRef } from 'react';
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
+import { cn } from '../../lib/utils'
+import { Copy, Check } from 'lucide-react'
+import { useState, useCallback, type ComponentPropsWithoutRef } from 'react'
 
 interface MarkdownRendererProps {
-  content: string;
-  className?: string;
+  content: string
+  className?: string
 }
 
 function CodeBlock({ className, children, ...props }: ComponentPropsWithoutRef<'code'>) {
-  const [copied, setCopied] = useState(false);
-  const match = /language-(\w+)/.exec(className || '');
-  const lang = match ? match[1] : '';
-  const code = String(children).replace(/\n$/, '');
-  const isInline = !className && !code.includes('\n');
+  const [copied, setCopied] = useState(false)
+  const match = /language-(\w+)/.exec(className || '')
+  const lang = match ? match[1] : ''
+  const code = String(children).replace(/\n$/, '')
+  const isInline = !className && !code.includes('\n')
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [code]);
+    navigator.clipboard.writeText(code)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }, [code])
 
   if (isInline) {
     return (
@@ -37,7 +37,7 @@ function CodeBlock({ className, children, ...props }: ComponentPropsWithoutRef<'
       >
         {children}
       </code>
-    );
+    )
   }
 
   return (
@@ -60,7 +60,7 @@ function CodeBlock({ className, children, ...props }: ComponentPropsWithoutRef<'
         </code>
       </pre>
     </div>
-  );
+  )
 }
 
 export function MarkdownRenderer({ content, className }: MarkdownRendererProps) {
@@ -120,5 +120,5 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
         {content}
       </ReactMarkdown>
     </div>
-  );
+  )
 }

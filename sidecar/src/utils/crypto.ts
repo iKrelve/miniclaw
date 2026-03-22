@@ -10,26 +10,26 @@
  * Encrypted format: "enc:v1:<iv_hex>:<authTag_hex>:<ciphertext_hex>"
  */
 
-import crypto from 'crypto';
-import os from 'os';
+import crypto from 'crypto'
+import os from 'os'
 
-const ALGORITHM = 'aes-256-gcm';
-const KEY_LENGTH = 32; // 256 bits
-const IV_LENGTH = 16;
-const SALT = 'miniclaw-credential-salt-v1';
-const PREFIX = 'enc:v1:';
+const ALGORITHM = 'aes-256-gcm'
+const KEY_LENGTH = 32 // 256 bits
+const IV_LENGTH = 16
+const SALT = 'miniclaw-credential-salt-v1'
+const PREFIX = 'enc:v1:'
 
 /** Derive a stable encryption key from machine identity. */
 function deriveKey(): Buffer {
   // Combine multiple machine attributes for a stable fingerprint
-  const fingerprint = [os.hostname(), os.homedir(), os.platform(), os.arch()].join(':');
-  return crypto.pbkdf2Sync(fingerprint, SALT, 100_000, KEY_LENGTH, 'sha256');
+  const fingerprint = [os.hostname(), os.homedir(), os.platform(), os.arch()].join(':')
+  return crypto.pbkdf2Sync(fingerprint, SALT, 100_000, KEY_LENGTH, 'sha256')
 }
 
-let cachedKey: Buffer | null = null;
+let cachedKey: Buffer | null = null
 function getKey(): Buffer {
-  if (!cachedKey) cachedKey = deriveKey();
-  return cachedKey;
+  if (!cachedKey) cachedKey = deriveKey()
+  return cachedKey
 }
 
 /**
@@ -37,17 +37,17 @@ function getKey(): Buffer {
  * Empty/null values pass through unchanged.
  */
 export function encrypt(plaintext: string): string {
-  if (!plaintext) return plaintext;
+  if (!plaintext) return plaintext
 
-  const key = getKey();
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  const key = getKey()
+  const iv = crypto.randomBytes(IV_LENGTH)
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv)
 
-  let encrypted = cipher.update(plaintext, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  const authTag = cipher.getAuthTag().toString('hex');
+  let encrypted = cipher.update(plaintext, 'utf8', 'hex')
+  encrypted += cipher.final('hex')
+  const authTag = cipher.getAuthTag().toString('hex')
 
-  return `${PREFIX}${iv.toString('hex')}:${authTag}:${encrypted}`;
+  return `${PREFIX}${iv.toString('hex')}:${authTag}:${encrypted}`
 }
 
 /**
@@ -55,23 +55,23 @@ export function encrypt(plaintext: string): string {
  * (no prefix), returns it as-is (transparent migration for existing data).
  */
 export function decrypt(ciphertext: string): string {
-  if (!ciphertext) return ciphertext;
+  if (!ciphertext) return ciphertext
   // Not encrypted — return as-is (supports existing plaintext data)
-  if (!ciphertext.startsWith(PREFIX)) return ciphertext;
+  if (!ciphertext.startsWith(PREFIX)) return ciphertext
 
-  const payload = ciphertext.slice(PREFIX.length);
-  const parts = payload.split(':');
-  if (parts.length !== 3) return ciphertext;
+  const payload = ciphertext.slice(PREFIX.length)
+  const parts = payload.split(':')
+  if (parts.length !== 3) return ciphertext
 
-  const [ivHex, authTagHex, encryptedHex] = parts;
-  const key = getKey();
-  const iv = Buffer.from(ivHex, 'hex');
-  const authTag = Buffer.from(authTagHex, 'hex');
+  const [ivHex, authTagHex, encryptedHex] = parts
+  const key = getKey()
+  const iv = Buffer.from(ivHex, 'hex')
+  const authTag = Buffer.from(authTagHex, 'hex')
 
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-  decipher.setAuthTag(authTag);
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv)
+  decipher.setAuthTag(authTag)
 
-  let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
+  let decrypted = decipher.update(encryptedHex, 'hex', 'utf8')
+  decrypted += decipher.final('utf8')
+  return decrypted
 }

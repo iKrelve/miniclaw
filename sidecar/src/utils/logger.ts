@@ -18,7 +18,10 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 
-const LOG_DIR = path.join(process.env.MINICLAW_DATA_DIR || path.join(os.homedir(), '.miniclaw'), 'logs')
+const LOG_DIR = path.join(
+  process.env.MINICLAW_DATA_DIR || path.join(os.homedir(), '.miniclaw'),
+  'logs',
+)
 const LOG_FILE = path.join(LOG_DIR, 'sidecar.log')
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB per file
 const MAX_ROTATED = 3
@@ -43,7 +46,9 @@ function rotate() {
       if (i === MAX_ROTATED && fs.existsSync(dst)) fs.unlinkSync(dst)
       if (fs.existsSync(src)) fs.renameSync(src, dst)
     }
-  } catch { /* best effort */ }
+  } catch {
+    /* best effort */
+  }
 }
 
 // Rotate leftover large log from previous run

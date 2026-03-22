@@ -2,31 +2,31 @@
  * ToolCallBlock — Collapsible display for tool use and tool result events.
  */
 
-import { useState } from 'react';
-import { ChevronDown, ChevronRight, Wrench, CheckCircle, XCircle, Loader2 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { useState } from 'react'
+import { ChevronDown, ChevronRight, Wrench, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { cn } from '../../lib/utils'
 
 interface ToolUse {
-  id: string;
-  name: string;
-  input: unknown;
+  id: string
+  name: string
+  input: unknown
 }
 
 interface ToolResult {
-  tool_use_id: string;
-  content: string;
-  is_error?: boolean;
+  tool_use_id: string
+  content: string
+  is_error?: boolean
 }
 
 interface ToolCallBlockProps {
-  toolUse: ToolUse;
-  toolResult?: ToolResult;
+  toolUse: ToolUse
+  toolResult?: ToolResult
 }
 
 export function ToolCallBlock({ toolUse, toolResult }: ToolCallBlockProps) {
-  const [expanded, setExpanded] = useState(false);
-  const isLoading = !toolResult;
-  const isError = toolResult?.is_error;
+  const [expanded, setExpanded] = useState(false)
+  const isLoading = !toolResult
+  const isError = toolResult?.is_error
 
   const statusIcon = isLoading ? (
     <Loader2 size={14} className="animate-spin text-blue-500" />
@@ -34,13 +34,13 @@ export function ToolCallBlock({ toolUse, toolResult }: ToolCallBlockProps) {
     <XCircle size={14} className="text-red-500" />
   ) : (
     <CheckCircle size={14} className="text-green-500" />
-  );
+  )
 
   // Format tool name for display
   const displayName = toolUse.name
     .replace(/([A-Z])/g, ' $1')
     .replace(/^./, (s) => s.toUpperCase())
-    .trim();
+    .trim()
 
   return (
     <div className="my-2 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
@@ -74,7 +74,12 @@ export function ToolCallBlock({ toolUse, toolResult }: ToolCallBlockProps) {
           {/* Result */}
           {toolResult && (
             <div className="px-3 py-2 border-t border-zinc-100 dark:border-zinc-800">
-              <div className={cn('text-xs font-medium mb-1', isError ? 'text-red-500' : 'text-zinc-500')}>
+              <div
+                className={cn(
+                  'text-xs font-medium mb-1',
+                  isError ? 'text-red-500' : 'text-zinc-500',
+                )}
+              >
                 {isError ? 'Error' : 'Result'}
               </div>
               <pre
@@ -92,5 +97,5 @@ export function ToolCallBlock({ toolUse, toolResult }: ToolCallBlockProps) {
         </div>
       )}
     </div>
-  );
+  )
 }

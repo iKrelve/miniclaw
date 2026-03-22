@@ -6,52 +6,52 @@
  * where to type.
  */
 
-import { useState, useRef, type KeyboardEvent } from 'react';
-import { Send, Square, CornerDownLeft } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { useState, useRef, type KeyboardEvent } from 'react'
+import { Send, Square, CornerDownLeft } from 'lucide-react'
+import { cn } from '../../lib/utils'
 
 interface MessageInputProps {
-  onSend: (content: string) => void;
-  onInterrupt?: () => void;
-  isStreaming: boolean;
-  disabled?: boolean;
+  onSend: (content: string) => void
+  onInterrupt?: () => void
+  isStreaming: boolean
+  disabled?: boolean
 }
 
 export function MessageInput({ onSend, onInterrupt, isStreaming, disabled }: MessageInputProps) {
-  const [value, setValue] = useState('');
-  const [focused, setFocused] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [value, setValue] = useState('')
+  const [focused, setFocused] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const handleSend = () => {
-    const trimmed = value.trim();
-    if (!trimmed || disabled) return;
-    onSend(trimmed);
-    setValue('');
+    const trimmed = value.trim()
+    if (!trimmed || disabled) return
+    onSend(trimmed)
+    setValue('')
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = 'auto'
     }
-  };
+  }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
+      e.preventDefault()
       if (isStreaming) {
-        onInterrupt?.();
+        onInterrupt?.()
       } else {
-        handleSend();
+        handleSend()
       }
     }
-  };
+  }
 
   const handleInput = () => {
-    const el = textareaRef.current;
+    const el = textareaRef.current
     if (el) {
-      el.style.height = 'auto';
-      el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
+      el.style.height = 'auto'
+      el.style.height = `${Math.min(el.scrollHeight, 240)}px`
     }
-  };
+  }
 
-  const canSend = !disabled && value.trim().length > 0;
+  const canSend = !disabled && value.trim().length > 0
 
   return (
     <div className="px-4 pb-4 pt-2">
@@ -130,5 +130,5 @@ export function MessageInput({ onSend, onInterrupt, isStreaming, disabled }: Mes
         </div>
       </div>
     </div>
-  );
+  )
 }

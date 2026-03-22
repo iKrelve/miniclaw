@@ -4,26 +4,26 @@
  * Sends resize events so the PTY stays in sync with the UI.
  */
 
-import { useEffect, useRef, useState } from 'react';
-import { Terminal } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { useSidecar } from '../../hooks/useSidecar';
-import '@xterm/xterm/css/xterm.css';
+import { useEffect, useRef, useState } from 'react'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import { useSidecar } from '../../hooks/useSidecar'
+import '@xterm/xterm/css/xterm.css'
 
 export function TerminalPanel() {
-  const { baseUrl, ready } = useSidecar();
-  const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const { baseUrl, ready } = useSidecar()
+  const terminalRef = useRef<HTMLDivElement>(null)
+  const xtermRef = useRef<Terminal | null>(null)
+  const fitAddonRef = useRef<FitAddon | null>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+  const [sessionId, setSessionId] = useState<string | null>(null)
 
   // Create terminal session on mount
   useEffect(() => {
-    if (!baseUrl || !ready) return;
+    if (!baseUrl || !ready) return
 
-    let active = true;
-    let createdId: string | null = null;
+    let active = true
+    let createdId: string | null = null
 
     fetch(`${baseUrl}/terminal`, {
       method: 'POST',
@@ -33,24 +33,24 @@ export function TerminalPanel() {
       .then((res) => res.json())
       .then((data) => {
         if (active && data.id) {
-          createdId = data.id;
-          setSessionId(data.id);
+          createdId = data.id
+          setSessionId(data.id)
         }
       })
-      .catch((err) => console.error('[terminal] Failed to create session:', err));
+      .catch((err) => console.error('[terminal] Failed to create session:', err))
 
     return () => {
-      active = false;
+      active = false
       // Cleanup terminal session
       if (createdId && baseUrl) {
-        fetch(`${baseUrl}/terminal/${createdId}`, { method: 'DELETE' }).catch(() => {});
+        fetch(`${baseUrl}/terminal/${createdId}`, { method: 'DELETE' }).catch(() => {})
       }
-    };
-  }, [baseUrl, ready]);
+    }
+  }, [baseUrl, ready])
 
   // Initialize xterm.js
   useEffect(() => {
-    if (!terminalRef.current || xtermRef.current) return;
+    if (!terminalRef.current || xtermRef.current) return
 
     const terminal = new Terminal({
       fontSize: 13,
@@ -63,81 +63,81 @@ export function TerminalPanel() {
       },
       cursorBlink: true,
       scrollback: 5000,
-    });
+    })
 
-    const fitAddon = new FitAddon();
-    terminal.loadAddon(fitAddon);
-    terminal.open(terminalRef.current);
-    fitAddon.fit();
+    const fitAddon = new FitAddon()
+    terminal.loadAddon(fitAddon)
+    terminal.open(terminalRef.current)
+    fitAddon.fit()
 
-    xtermRef.current = terminal;
-    fitAddonRef.current = fitAddon;
+    xtermRef.current = terminal
+    fitAddonRef.current = fitAddon
 
     // Handle container resize — fit xterm and notify PTY
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
-    });
-    resizeObserver.observe(terminalRef.current);
+      fitAddon.fit()
+    })
+    resizeObserver.observe(terminalRef.current)
 
-    terminal.writeln('\x1b[1;36m🦞 小龙虾 Terminal\x1b[0m');
-    terminal.writeln('');
+    terminal.writeln('\x1b[1;36m🦞 小龙虾 Terminal\x1b[0m')
+    terminal.writeln('')
 
     return () => {
-      resizeObserver.disconnect();
-      terminal.dispose();
-      xtermRef.current = null;
-      fitAddonRef.current = null;
-    };
-  }, []);
+      resizeObserver.disconnect()
+      terminal.dispose()
+      xtermRef.current = null
+      fitAddonRef.current = null
+    }
+  }, [])
 
   // Connect WebSocket for real-time terminal I/O
   useEffect(() => {
-    if (!sessionId || !baseUrl || !xtermRef.current) return;
+    if (!sessionId || !baseUrl || !xtermRef.current) return
 
-    const terminal = xtermRef.current;
+    const terminal = xtermRef.current
 
     // Derive WebSocket URL from HTTP baseUrl
-    const wsUrl = baseUrl.replace(/^http/, 'ws') + `/terminal/${sessionId}/ws`;
-    const ws = new WebSocket(wsUrl);
-    ws.binaryType = 'arraybuffer';
-    wsRef.current = ws;
+    const wsUrl = baseUrl.replace(/^http/, 'ws') + `/terminal/${sessionId}/ws`
+    const ws = new WebSocket(wsUrl)
+    ws.binaryType = 'arraybuffer'
+    wsRef.current = ws
 
     ws.onmessage = (event) => {
-      if (!xtermRef.current) return;
+      if (!xtermRef.current) return
       if (event.data instanceof ArrayBuffer) {
-        xtermRef.current.write(new Uint8Array(event.data));
+        xtermRef.current.write(new Uint8Array(event.data))
       } else {
-        xtermRef.current.write(event.data);
+        xtermRef.current.write(event.data)
       }
-    };
+    }
 
     ws.onclose = () => {
-      wsRef.current = null;
-    };
+      wsRef.current = null
+    }
 
     // Forward user keystrokes to sidecar via WebSocket
     const dataDisposable = terminal.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data);
+        ws.send(data)
       }
-    });
+    })
 
     // Forward resize events to sidecar so the PTY dimensions stay in sync
     const resizeDisposable = terminal.onResize(({ cols, rows }) => {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+        ws.send(JSON.stringify({ type: 'resize', cols, rows }))
       }
-    });
+    })
 
     return () => {
-      dataDisposable.dispose();
-      resizeDisposable.dispose();
+      dataDisposable.dispose()
+      resizeDisposable.dispose()
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close();
+        ws.close()
       }
-      wsRef.current = null;
-    };
-  }, [sessionId, baseUrl]);
+      wsRef.current = null
+    }
+  }, [sessionId, baseUrl])
 
   return (
     <div className="flex-1 flex flex-col bg-[#1a1b26] min-h-0">
@@ -149,5 +149,5 @@ export function TerminalPanel() {
       </div>
       <div ref={terminalRef} className="flex-1 p-1" />
     </div>
-  );
+  )
 }

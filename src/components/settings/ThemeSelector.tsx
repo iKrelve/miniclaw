@@ -2,13 +2,13 @@
  * ThemeSelector — Grid of theme cards for selection.
  */
 
-import { getThemes } from '../../lib/theme/loader';
-import { useTheme } from '../../hooks/useTheme';
-import { cn } from '../../lib/utils';
+import { getThemes } from '../../lib/theme/loader'
+import { useTheme } from '../../hooks/useTheme'
+import { cn } from '../../lib/utils'
 
 export function ThemeSelector() {
-  const { theme: activeTheme, setTheme } = useTheme();
-  const themes = getThemes();
+  const { theme: activeTheme, setTheme } = useTheme()
+  const themes = getThemes()
 
   return (
     <section>
@@ -51,5 +51,5 @@ export function ThemeSelector() {
         ))}
       </div>
     </section>
-  );
+  )
 }

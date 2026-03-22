@@ -6,9 +6,9 @@
  * and gives users a clear overview of the setup progress.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { useSidecar } from '../../hooks/useSidecar';
-import { Button } from '../ui/button';
+import { useState, useEffect, useCallback } from 'react'
+import { useSidecar } from '../../hooks/useSidecar'
+import { Button } from '../ui/button'
 import {
   CheckCircle,
   XCircle,
@@ -20,11 +20,11 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
-} from 'lucide-react';
-import { cn } from '../../lib/utils';
+} from 'lucide-react'
+import { cn } from '../../lib/utils'
 
 interface OnboardingWizardProps {
-  onComplete: () => void;
+  onComplete: () => void
 }
 
 /* ------------------------------------------------------------------ */
@@ -33,10 +33,10 @@ interface OnboardingWizardProps {
 
 const features = [
   { icon: MessageSquare, title: 'AI 对话', desc: '基于 Claude Code SDK 的智能对话' },
-  { icon: Puzzle,        title: 'MCP 插件', desc: '可扩展的 MCP 服务器集成' },
-  { icon: FolderGit2,    title: '项目管理', desc: '文件浏览、Git 操作一站搞定' },
-  { icon: Sparkles,      title: '多模型',   desc: '支持 Anthropic / OpenAI 等多个模型' },
-];
+  { icon: Puzzle, title: 'MCP 插件', desc: '可扩展的 MCP 服务器集成' },
+  { icon: FolderGit2, title: '项目管理', desc: '文件浏览、Git 操作一站搞定' },
+  { icon: Sparkles, title: '多模型', desc: '支持 Anthropic / OpenAI 等多个模型' },
+]
 
 /* ------------------------------------------------------------------ */
 /* Status badge                                                        */
@@ -48,20 +48,20 @@ function StatusBadge({ status }: { status: 'done' | 'pending' | 'error' }) {
       <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
         <CheckCircle size={14} /> 就绪
       </span>
-    );
+    )
   }
   if (status === 'error') {
     return (
       <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
         <XCircle size={14} /> 未就绪
       </span>
-    );
+    )
   }
   return (
     <span className="flex items-center gap-1 text-xs text-zinc-400">
       <Loader2 size={14} className="animate-spin" /> 检测中
     </span>
-  );
+  )
 }
 
 /* ------------------------------------------------------------------ */
@@ -69,72 +69,72 @@ function StatusBadge({ status }: { status: 'done' | 'pending' | 'error' }) {
 /* ------------------------------------------------------------------ */
 
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
-  const { baseUrl } = useSidecar();
+  const { baseUrl } = useSidecar()
 
   // Sidecar health check
-  const [sidecarStatus, setSidecarStatus] = useState<'pending' | 'done' | 'error'>('pending');
+  const [sidecarStatus, setSidecarStatus] = useState<'pending' | 'done' | 'error'>('pending')
 
   // Provider form
-  const [providerOpen, setProviderOpen] = useState(false);
-  const [providerName, setProviderName] = useState('');
-  const [providerType, setProviderType] = useState('anthropic');
-  const [apiKey, setApiKey] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [providerDone, setProviderDone] = useState(false);
+  const [providerOpen, setProviderOpen] = useState(false)
+  const [providerName, setProviderName] = useState('')
+  const [providerType, setProviderType] = useState('anthropic')
+  const [apiKey, setApiKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [providerDone, setProviderDone] = useState(false)
 
   // Check sidecar on mount
   useEffect(() => {
-    if (!baseUrl) return;
+    if (!baseUrl) return
     fetch(`${baseUrl}/health`)
       .then((res) => (res.ok ? setSidecarStatus('done') : setSidecarStatus('error')))
-      .catch(() => setSidecarStatus('error'));
-  }, [baseUrl]);
+      .catch(() => setSidecarStatus('error'))
+  }, [baseUrl])
 
   // Retry sidecar check every 3s if not connected
   useEffect(() => {
-    if (sidecarStatus !== 'error' || !baseUrl) return;
+    if (sidecarStatus !== 'error' || !baseUrl) return
     const id = setInterval(() => {
       fetch(`${baseUrl}/health`)
         .then((res) => {
           if (res.ok) {
-            setSidecarStatus('done');
-            clearInterval(id);
+            setSidecarStatus('done')
+            clearInterval(id)
           }
         })
-        .catch(() => {});
-    }, 3000);
-    return () => clearInterval(id);
-  }, [sidecarStatus, baseUrl]);
+        .catch(() => {})
+    }, 3000)
+    return () => clearInterval(id)
+  }, [sidecarStatus, baseUrl])
 
   const handleSaveProvider = useCallback(async () => {
-    if (!baseUrl || !providerName || !apiKey) return;
-    setSaving(true);
+    if (!baseUrl || !providerName || !apiKey) return
+    setSaving(true)
     try {
       await fetch(`${baseUrl}/providers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: providerName, type: providerType, api_key: apiKey }),
-      });
-      setProviderDone(true);
-      setProviderOpen(false);
+      })
+      setProviderDone(true)
+      setProviderOpen(false)
     } catch {
       // error
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
-  }, [baseUrl, providerName, providerType, apiKey]);
+  }, [baseUrl, providerName, providerType, apiKey])
 
   const handleFinish = useCallback(async () => {
-    if (!baseUrl) return;
+    if (!baseUrl) return
     await fetch(`${baseUrl}/settings/onboarding_complete`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value: 'true' }),
-    }).catch(() => {});
-    onComplete();
-  }, [baseUrl, onComplete]);
+    }).catch(() => {})
+    onComplete()
+  }, [baseUrl, onComplete])
 
-  const completedCount = [sidecarStatus === 'done', providerDone].filter(Boolean).length;
+  const completedCount = [sidecarStatus === 'done', providerDone].filter(Boolean).length
 
   return (
     <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-zinc-50 to-blue-50/50 dark:from-zinc-950 dark:to-blue-950/20 p-4">
@@ -144,9 +144,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
           <div className="flex items-center gap-3">
             <div className="text-4xl">🦞</div>
             <div className="flex-1">
-              <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                欢迎使用小龙虾
-              </h1>
+              <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">欢迎使用小龙虾</h1>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 精简的 Claude Code 桌面客户端
               </p>
@@ -170,7 +168,9 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                 </div>
                 <div className="min-w-0">
                   <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{f.title}</p>
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight">{f.desc}</p>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight">
+                    {f.desc}
+                  </p>
                 </div>
               </div>
             ))}
@@ -272,11 +272,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
 
         {/* ── Footer ── */}
         <div className="px-6 pb-6 pt-2 flex items-center gap-3">
-          <Button
-            size="lg"
-            onClick={handleFinish}
-            className="flex-1 gap-2"
-          >
+          <Button size="lg" onClick={handleFinish} className="flex-1 gap-2">
             <Rocket size={16} />
             进入小龙虾
           </Button>
@@ -289,5 +285,5 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         </div>
       </div>
     </div>
-  );
+  )
 }

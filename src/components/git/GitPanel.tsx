@@ -2,60 +2,70 @@
  * GitPanel — Git status, history, and branch management.
  */
 
-import { useEffect, useState, useCallback } from 'react';
-import { useSidecar } from '../../hooks/useSidecar';
-import { useAppStore } from '../../stores';
-import { GitBranch, Clock, FileText, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
-import { Button } from '../ui/button';
-import { cn } from '../../lib/utils';
+import { useEffect, useState, useCallback } from 'react'
+import { useSidecar } from '../../hooks/useSidecar'
+import { useAppStore } from '../../stores'
+import { GitBranch, Clock, FileText, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react'
+import { Button } from '../ui/button'
+import { cn } from '../../lib/utils'
 
-interface GitFile { status: string; path: string }
-interface GitCommit { hash: string; author: string; date: string; message: string }
+interface GitFile {
+  status: string
+  path: string
+}
+interface GitCommit {
+  hash: string
+  author: string
+  date: string
+  message: string
+}
 
 export function GitPanel() {
-  const { baseUrl } = useSidecar();
-  const { activeSessionId, sessions } = useAppStore();
-  const cwd = sessions.find((s) => s.id === activeSessionId)?.working_directory || '~';
+  const { baseUrl } = useSidecar()
+  const { activeSessionId, sessions } = useAppStore()
+  const cwd = sessions.find((s) => s.id === activeSessionId)?.working_directory || '~'
 
-  const [branch, setBranch] = useState('');
-  const [files, setFiles] = useState<GitFile[]>([]);
-  const [commits, setCommits] = useState<GitCommit[]>([]);
-  const [branches, setBranches] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [statusOpen, setStatusOpen] = useState(true);
-  const [historyOpen, setHistoryOpen] = useState(true);
+  const [branch, setBranch] = useState('')
+  const [files, setFiles] = useState<GitFile[]>([])
+  const [commits, setCommits] = useState<GitCommit[]>([])
+  const [branches, setBranches] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const [statusOpen, setStatusOpen] = useState(true)
+  const [historyOpen, setHistoryOpen] = useState(true)
 
   const refresh = useCallback(async () => {
-    if (!baseUrl) return;
-    setLoading(true);
+    if (!baseUrl) return
+    setLoading(true)
     try {
       const [statusRes, logRes, branchRes] = await Promise.all([
         fetch(`${baseUrl}/git/status?cwd=${encodeURIComponent(cwd)}`),
         fetch(`${baseUrl}/git/log?cwd=${encodeURIComponent(cwd)}&limit=15`),
         fetch(`${baseUrl}/git/branches?cwd=${encodeURIComponent(cwd)}`),
-      ]);
-      const status = await statusRes.json();
-      const log = await logRes.json();
-      const br = await branchRes.json();
-      setBranch(status.branch || '');
-      setFiles(status.files || []);
-      setCommits(log.commits || []);
-      setBranches(br.branches || []);
+      ])
+      const status = await statusRes.json()
+      const log = await logRes.json()
+      const br = await branchRes.json()
+      setBranch(status.branch || '')
+      setFiles(status.files || [])
+      setCommits(log.commits || [])
+      setBranches(br.branches || [])
     } catch {
       // not a git repo
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, [baseUrl, cwd]);
+  }, [baseUrl, cwd])
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
   const statusColor = (s: string) => {
-    if (s.includes('M')) return 'text-amber-500';
-    if (s.includes('A') || s.includes('?')) return 'text-green-500';
-    if (s.includes('D')) return 'text-red-500';
-    return 'text-zinc-500';
-  };
+    if (s.includes('M')) return 'text-amber-500'
+    if (s.includes('A') || s.includes('?')) return 'text-green-500'
+    if (s.includes('D')) return 'text-red-500'
+    return 'text-zinc-500'
+  }
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -72,7 +82,10 @@ export function GitPanel() {
 
       {/* Changed Files */}
       <section>
-        <button onClick={() => setStatusOpen(!statusOpen)} className="flex items-center gap-1 text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+        <button
+          onClick={() => setStatusOpen(!statusOpen)}
+          className="flex items-center gap-1 text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2"
+        >
           {statusOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           <FileText size={14} />
           Changed Files ({files.length})
@@ -82,7 +95,9 @@ export function GitPanel() {
             {files.length === 0 && <p className="text-xs text-zinc-500">Working tree clean</p>}
             {files.map((f, i) => (
               <div key={i} className="flex items-center gap-2 text-xs font-mono">
-                <span className={cn('w-5 text-center font-bold', statusColor(f.status))}>{f.status}</span>
+                <span className={cn('w-5 text-center font-bold', statusColor(f.status))}>
+                  {f.status}
+                </span>
                 <span className="truncate text-zinc-700 dark:text-zinc-300">{f.path}</span>
               </div>
             ))}
@@ -92,7 +107,10 @@ export function GitPanel() {
 
       {/* Commit History */}
       <section>
-        <button onClick={() => setHistoryOpen(!historyOpen)} className="flex items-center gap-1 text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+        <button
+          onClick={() => setHistoryOpen(!historyOpen)}
+          className="flex items-center gap-1 text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2"
+        >
           {historyOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           <Clock size={14} />
           History
@@ -125,7 +143,9 @@ export function GitPanel() {
                 key={b}
                 className={cn(
                   'text-xs px-2 py-0.5 rounded-full',
-                  b === branch ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400',
+                  b === branch
+                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400',
                 )}
               >
                 {b}
@@ -135,5 +155,5 @@ export function GitPanel() {
         </section>
       )}
     </div>
-  );
+  )
 }

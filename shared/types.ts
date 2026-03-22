@@ -8,55 +8,55 @@
 // ==========================================
 
 export interface ChatSession {
-  id: string;
-  title: string;
-  created_at: string;
-  updated_at: string;
-  model: string;
-  system_prompt: string;
-  working_directory: string;
-  sdk_session_id: string;
-  project_name: string;
-  status: 'active' | 'archived';
-  mode: 'code' | 'plan' | 'ask';
-  provider_name: string;
-  provider_id: string;
-  sdk_cwd: string;
-  runtime_status: 'idle' | 'running' | 'error';
-  permission_profile: 'default' | 'full_access';
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+  model: string
+  system_prompt: string
+  working_directory: string
+  sdk_session_id: string
+  project_name: string
+  status: 'active' | 'archived'
+  mode: 'code' | 'plan' | 'ask'
+  provider_name: string
+  provider_id: string
+  sdk_cwd: string
+  runtime_status: 'idle' | 'running' | 'error'
+  permission_profile: 'default' | 'full_access'
 }
 
 export interface Message {
-  id: string;
-  session_id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  token_usage?: string;
-  created_at: string;
+  id: string
+  session_id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  token_usage?: string
+  created_at: string
 }
 
 export interface ApiProvider {
-  id: string;
-  name: string;
-  type: ProviderType;
-  api_key: string;
-  base_url: string;
-  is_active: boolean;
-  created_at: string;
+  id: string
+  name: string
+  type: ProviderType
+  api_key: string
+  base_url: string
+  is_active: boolean
+  created_at: string
 }
 
-export type ProviderType = 'anthropic' | 'openai' | 'google' | 'bedrock' | 'vertex' | 'custom';
+export type ProviderType = 'anthropic' | 'openai' | 'google' | 'bedrock' | 'vertex' | 'custom'
 
 export interface TaskItem {
-  id: string;
-  session_id: string;
-  content: string;
-  status: TaskStatus;
-  created_at: string;
-  updated_at: string;
+  id: string
+  session_id: string
+  content: string
+  status: TaskStatus
+  created_at: string
+  updated_at: string
 }
 
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 
 // ==========================================
 // SSE Stream Events
@@ -70,37 +70,37 @@ export type SSEEventType =
   | 'mode_change'
   | 'error'
   | 'done'
-  | 'token_usage';
+  | 'token_usage'
 
 export interface SSEEvent {
-  type: SSEEventType;
-  data: unknown;
+  type: SSEEventType
+  data: unknown
 }
 
 export interface TokenUsage {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_input_tokens?: number;
-  cache_creation_input_tokens?: number;
+  input_tokens: number
+  output_tokens: number
+  cache_read_input_tokens?: number
+  cache_creation_input_tokens?: number
 }
 
 export interface ToolUseInfo {
-  id: string;
-  name: string;
-  input: unknown;
+  id: string
+  name: string
+  input: unknown
 }
 
 export interface ToolResultInfo {
-  tool_use_id: string;
-  content: string;
-  is_error?: boolean;
+  tool_use_id: string
+  content: string
+  is_error?: boolean
 }
 
 export interface PermissionRequestEvent {
-  id: string;
-  tool_name: string;
-  description: string;
-  input: unknown;
+  id: string
+  tool_name: string
+  description: string
+  input: unknown
 }
 
 // ==========================================
@@ -108,21 +108,21 @@ export interface PermissionRequestEvent {
 // ==========================================
 
 export interface McpServerConfig {
-  type?: 'stdio' | 'sse' | 'http';
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  url?: string;
-  headers?: Record<string, string>;
+  type?: 'stdio' | 'sse' | 'http'
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  url?: string
+  headers?: Record<string, string>
 }
 
-export type McpStatus = 'connected' | 'disconnected' | 'connecting' | 'error';
+export type McpStatus = 'connected' | 'disconnected' | 'connecting' | 'error'
 
 export interface McpServerInfo {
-  name: string;
-  config: McpServerConfig;
-  status: McpStatus;
-  error?: string;
+  name: string
+  config: McpServerConfig
+  status: McpStatus
+  error?: string
 }
 
 // ==========================================
@@ -130,19 +130,19 @@ export interface McpServerInfo {
 // ==========================================
 
 export interface FileTreeNode {
-  name: string;
-  path: string;
-  type: 'file' | 'directory';
-  children?: FileTreeNode[];
-  size?: number;
-  extension?: string;
+  name: string
+  path: string
+  type: 'file' | 'directory'
+  children?: FileTreeNode[]
+  size?: number
+  extension?: string
 }
 
 export interface FilePreview {
-  path: string;
-  content: string;
-  language: string;
-  line_count: number;
+  path: string
+  content: string
+  language: string
+  line_count: number
 }
 
 // ==========================================
@@ -150,7 +150,7 @@ export interface FilePreview {
 // ==========================================
 
 export interface SettingsMap {
-  [key: string]: string;
+  [key: string]: string
 }
 
 // ==========================================
@@ -158,11 +158,11 @@ export interface SettingsMap {
 // ==========================================
 
 export interface SkillInfo {
-  name: string;
-  description: string;
-  version: string;
-  installed: boolean;
-  source: 'global' | 'project' | 'marketplace';
+  name: string
+  description: string
+  version: string
+  installed: boolean
+  source: 'global' | 'project' | 'marketplace'
 }
 
 // ==========================================
@@ -170,40 +170,40 @@ export interface SkillInfo {
 // ==========================================
 
 export interface SendMessageRequest {
-  session_id: string;
-  content: string;
-  model?: string;
-  mode?: 'code' | 'plan' | 'ask';
-  provider_id?: string;
-  files?: FileAttachment[];
+  session_id: string
+  content: string
+  model?: string
+  mode?: 'code' | 'plan' | 'ask'
+  provider_id?: string
+  files?: FileAttachment[]
 }
 
 export interface FileAttachment {
-  id: string;
-  name: string;
-  type: string;
-  size: number;
-  data: string; // base64
+  id: string
+  name: string
+  type: string
+  size: number
+  data: string // base64
 }
 
 export interface CreateSessionRequest {
-  title?: string;
-  working_directory: string;
-  model?: string;
-  mode?: 'code' | 'plan' | 'ask';
-  provider_id?: string;
+  title?: string
+  working_directory: string
+  model?: string
+  mode?: 'code' | 'plan' | 'ask'
+  provider_id?: string
 }
 
 export interface CreateProviderRequest {
-  name: string;
-  type: ProviderType;
-  api_key: string;
-  base_url?: string;
+  name: string
+  type: ProviderType
+  api_key: string
+  base_url?: string
 }
 
 export interface UpdateProviderRequest {
-  name?: string;
-  api_key?: string;
-  base_url?: string;
-  is_active?: boolean;
+  name?: string
+  api_key?: string
+  base_url?: string
+  is_active?: boolean
 }

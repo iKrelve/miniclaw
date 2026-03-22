@@ -2,7 +2,7 @@
  * Provider HTTP routes — CRUD for API providers
  */
 
-import { Hono } from 'hono';
+import { Hono } from 'hono'
 import {
   createProvider,
   getProvider,
@@ -10,78 +10,78 @@ import {
   updateProvider,
   deleteProvider,
   activateProvider,
-} from '../db';
-import { getModelsForProvider, getAllModels } from '../services/provider-resolver';
+} from '../db'
+import { getModelsForProvider, getAllModels } from '../services/provider-resolver'
 
-const providerRoutes = new Hono();
+const providerRoutes = new Hono()
 
 /** GET /providers — List all providers */
 providerRoutes.get('/', (c) => {
-  return c.json({ providers: listProviders() });
-});
+  return c.json({ providers: listProviders() })
+})
 
 /** POST /providers — Create a new provider */
 providerRoutes.post('/', async (c) => {
-  const body = await c.req.json();
-  const { name, type, api_key, base_url } = body;
+  const body = await c.req.json()
+  const { name, type, api_key, base_url } = body
   if (!name || !type) {
-    return c.json({ error: 'name and type are required' }, 400);
+    return c.json({ error: 'name and type are required' }, 400)
   }
-  const provider = createProvider({ name, type, api_key: api_key || '', base_url });
-  return c.json({ provider }, 201);
-});
+  const provider = createProvider({ name, type, api_key: api_key || '', base_url })
+  return c.json({ provider }, 201)
+})
 
 /** GET /providers/:id — Get a provider */
 providerRoutes.get('/:id', (c) => {
-  const id = c.req.param('id');
-  const provider = getProvider(id);
+  const id = c.req.param('id')
+  const provider = getProvider(id)
   if (!provider) {
-    return c.json({ error: 'Provider not found' }, 404);
+    return c.json({ error: 'Provider not found' }, 404)
   }
-  return c.json({ provider });
-});
+  return c.json({ provider })
+})
 
 /** PUT /providers/:id — Update a provider */
 providerRoutes.put('/:id', async (c) => {
-  const id = c.req.param('id');
-  const body = await c.req.json();
-  const provider = getProvider(id);
+  const id = c.req.param('id')
+  const body = await c.req.json()
+  const provider = getProvider(id)
   if (!provider) {
-    return c.json({ error: 'Provider not found' }, 404);
+    return c.json({ error: 'Provider not found' }, 404)
   }
-  updateProvider(id, body);
-  return c.json({ provider: getProvider(id) });
-});
+  updateProvider(id, body)
+  return c.json({ provider: getProvider(id) })
+})
 
 /** DELETE /providers/:id — Delete a provider */
 providerRoutes.delete('/:id', (c) => {
-  const id = c.req.param('id');
-  const provider = getProvider(id);
+  const id = c.req.param('id')
+  const provider = getProvider(id)
   if (!provider) {
-    return c.json({ error: 'Provider not found' }, 404);
+    return c.json({ error: 'Provider not found' }, 404)
   }
-  deleteProvider(id);
-  return c.json({ success: true });
-});
+  deleteProvider(id)
+  return c.json({ success: true })
+})
 
 /** POST /providers/:id/activate — Set as default provider */
 providerRoutes.post('/:id/activate', (c) => {
-  const id = c.req.param('id');
-  const provider = getProvider(id);
+  const id = c.req.param('id')
+  const provider = getProvider(id)
   if (!provider) {
-    return c.json({ error: 'Provider not found' }, 404);
+    return c.json({ error: 'Provider not found' }, 404)
   }
-  activateProvider(id);
-  return c.json({ success: true });
-});
+  activateProvider(id)
+  return c.json({ success: true })
+})
 
 /** GET /providers/models?type=... — Get available models */
 providerRoutes.get('/models', (c) => {
-  const type = c.req.query('type');
+  const type = c.req.query('type')
   if (type) {
-    return c.json({ models: getModelsForProvider(type) });
+    return c.json({ models: getModelsForProvider(type) })
   }
-  return c.json({ models: getAllModels() });
-});
+  return c.json({ models: getAllModels() })
+})
 
-export default providerRoutes;
+export default providerRoutes

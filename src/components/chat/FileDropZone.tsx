@@ -2,58 +2,58 @@
  * FileDropZone — Drag-and-drop file upload overlay for the chat area.
  */
 
-import { useState, useCallback, type DragEvent, type ReactNode } from 'react';
-import { Upload } from 'lucide-react';
+import { useState, useCallback, type DragEvent, type ReactNode } from 'react'
+import { Upload } from 'lucide-react'
 
 interface FileDropZoneProps {
-  children: ReactNode;
-  onFilesDropped: (files: File[]) => void;
-  disabled?: boolean;
+  children: ReactNode
+  onFilesDropped: (files: File[]) => void
+  disabled?: boolean
 }
 
 export function FileDropZone({ children, onFilesDropped, disabled }: FileDropZoneProps) {
-  const [dragging, setDragging] = useState(false);
-  let dragCounter = 0;
+  const [dragging, setDragging] = useState(false)
+  let dragCounter = 0
 
   const handleDragEnter = useCallback((e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter++;
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounter++
     if (e.dataTransfer.types.includes('Files')) {
-      setDragging(true);
+      setDragging(true)
     }
-  }, []);
+  }, [])
 
   const handleDragLeave = useCallback((e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter--;
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounter--
     if (dragCounter === 0) {
-      setDragging(false);
+      setDragging(false)
     }
-  }, []);
+  }, [])
 
   const handleDragOver = useCallback((e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
+    e.preventDefault()
+    e.stopPropagation()
+  }, [])
 
   const handleDrop = useCallback(
     (e: DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setDragging(false);
-      dragCounter = 0;
+      e.preventDefault()
+      e.stopPropagation()
+      setDragging(false)
+      dragCounter = 0
 
-      if (disabled) return;
+      if (disabled) return
 
-      const files = Array.from(e.dataTransfer.files);
+      const files = Array.from(e.dataTransfer.files)
       if (files.length > 0) {
-        onFilesDropped(files);
+        onFilesDropped(files)
       }
     },
     [onFilesDropped, disabled],
-  );
+  )
 
   return (
     <div
@@ -75,5 +75,5 @@ export function FileDropZone({ children, onFilesDropped, disabled }: FileDropZon
         </div>
       )}
     </div>
-  );
+  )
 }

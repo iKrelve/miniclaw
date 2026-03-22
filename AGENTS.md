@@ -5,8 +5,8 @@
 小龙虾 (MiniClaw) is a desktop AI assistant built with Tauri 2, React 19, and TypeScript. It provides a conversational AI interface powered by the Claude Code SDK (`@anthropic-ai/claude-agent-sdk`), with session management, MCP integration, file browsing, git operations, and multi-provider support.
 
 **Tech stack**: Tauri 2 (Rust) + React 19 + TypeScript 5.9 + Vite 8 + Tailwind CSS 4 + Zustand 5
-**Sidecar runtime**: Bun + Hono HTTP server + bun:sqlite
-**Logging**: pino + pino-roll → `~/.miniclaw/logs/` (structured JSON, size-based rotation)
+**Sidecar runtime**: Bun 1.3.11+ + Hono HTTP server + bun:sqlite
+**Logging**: pino + pino.multistream (in-process, no worker threads) → `~/.miniclaw/logs/` (structured JSON)
 **Package manager**: Bun (lock file: `bun.lock`)
 **Toolchain**: Oxlint (linter) + Oxfmt (formatter) + Lefthook (git hooks) + Knip (dead code)
 
@@ -27,7 +27,7 @@ The application is a **three-process architecture**:
 │   Bun Sidecar (Hono HTTP Server)                        │
 │   sidecar/src/                                          │
 │   - Claude Code SDK streaming                           │
-│   - SQLite database (better-sqlite3)                    │
+│   - SQLite database (bun:sqlite)                         │
 │   - MCP server configuration                            │
 │   - File/Git/Settings/Tasks API                         │
 └─────────────────────────────────────────────────────────┘
@@ -81,7 +81,7 @@ The application is a **three-process architecture**:
 │   │   ├── mcp.ts         # MCP server config listing + status
 │   │   ├── tasks.ts       # CRUD for session tasks
 │   │   ├── skills.ts      # Skills scanning from ~/.claude/commands + ~/.miniclaw/skills
-│   │   ├── terminal.ts    # POST /terminal (create), DELETE /:id (kill), GET /:id/ws (WebSocket)
+│   │   ├── terminal.ts    # POST /terminal (create), POST /:id/resize, DELETE /:id (kill), GET /:id/ws (WebSocket)
 │   │   ├── uploads.ts     # File upload handling
 │   │   └── workspace.ts   # Workspace config files (soul.md, user.md, claude.md, memory.md)
 │   ├── /services
@@ -89,9 +89,10 @@ The application is a **three-process architecture**:
 │   │   ├── mcp-manager.ts    # MCP config loader (merges ~/.claude.json + settings + .mcp.json)
 │   │   ├── platform.ts       # Claude binary detection + PATH expansion
 │   │   ├── provider-resolver.ts # Multi-provider + model resolution (Anthropic/OpenAI/Google/Bedrock/Vertex)
-│   │   └── terminal.ts       # Terminal subprocess management + WebSocket I/O streaming
+│   │   └── terminal.ts       # Bun native PTY terminal management + WebSocket I/O streaming
 │   └── /utils
-│       ├── logger.ts           # pino logger (file + stderr, rotation via pino-roll)
+│       ├── crypto.ts           # AES-256-GCM credential encryption (machine-derived key)
+│       ├── logger.ts           # pino logger (multistream: file + stderr, in-process rotation)
 │       └── port.ts             # Available port discovery
 
 /src-tauri                 # Tauri 2 (Rust) main process
@@ -109,22 +110,22 @@ The application is a **three-process architecture**:
 
 ## Development Commands
 
-| Command | Purpose |
-|---------|---------|
-| `bun run dev` | **Full dev mode**: starts Vite (port 1420) + compiles Rust + launches Tauri window |
-| `bun run dev:web` | Vite dev server only (debug UI without Tauri) |
-| `bun run dev:sidecar` | Run sidecar standalone (debug API independently) |
-| `bun run build:sidecar` | Build sidecar to `src-tauri/binaries/sidecar-{triple}` |
-| `bun run build` | **Full production build**: sidecar + frontend + Tauri packaging (DMG/installer) |
-| `bun run build:frontend` | TypeScript check + Vite production build (frontend only) |
-| `bun run setup` | **First-time setup**: install all deps + build sidecar binary |
-| `bun run lint` | Oxlint check on `src/` + `shared/` |
-| `bun run lint:fix` | Auto-fix lint issues |
-| `bun run format` | Oxfmt format all files |
-| `bun run format:check` | Check formatting (CI use) |
-| `bun run test` | Run sidecar tests (Bun test) |
-| `bun run deadcode` | Knip dead code / unused dependency detection |
-| `bun run check` | **One-shot validation**: format:check + lint + typecheck |
+| Command                  | Purpose                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| `bun run dev`            | **Full dev mode**: starts Vite (port 1420) + compiles Rust + launches Tauri window |
+| `bun run dev:web`        | Vite dev server only (debug UI without Tauri)                                      |
+| `bun run dev:sidecar`    | Run sidecar standalone (debug API independently)                                   |
+| `bun run build:sidecar`  | Build sidecar to `src-tauri/binaries/sidecar-{triple}`                             |
+| `bun run build`          | **Full production build**: sidecar + frontend + Tauri packaging (DMG/installer)    |
+| `bun run build:frontend` | TypeScript check + Vite production build (frontend only)                           |
+| `bun run setup`          | **First-time setup**: install all deps + build sidecar binary                      |
+| `bun run lint`           | Oxlint check on `src/` + `shared/`                                                 |
+| `bun run lint:fix`       | Auto-fix lint issues                                                               |
+| `bun run format`         | Oxfmt format all files                                                             |
+| `bun run format:check`   | Check formatting (CI use)                                                          |
+| `bun run test`           | Run sidecar tests (Bun test)                                                       |
+| `bun run deadcode`       | Knip dead code / unused dependency detection                                       |
+| `bun run check`          | **One-shot validation**: format:check + lint + typecheck                           |
 
 ### Prerequisites
 
@@ -172,6 +173,7 @@ Tables: `chat_sessions`, `messages`, `settings`, `tasks`, `api_providers`.
 ### MCP Server Configuration
 
 Loaded from three sources (later overrides earlier):
+
 1. `~/.claude.json` → `mcpServers`
 2. `~/.claude/settings.json` → `mcpServers`
 3. Project `.mcp.json` → `mcpServers`
@@ -184,37 +186,38 @@ Environment variable placeholders (`${KEY}`) are resolved against the DB `settin
 
 ### Logging System
 
-**pino** (structured JSON) + **pino-roll** (file rotation). All sidecar modules log to `~/.miniclaw/logs/`.
+**pino** (structured JSON) with `pino.multistream()` + `pino.destination()` (in-process, no worker threads). Does **not** use `pino.transport()` — that relies on `worker_threads` to dynamically load target modules, which breaks inside `bun build --compile` single-binary. All sidecar modules log to `~/.miniclaw/logs/`.
 
-| Item | Value |
-|------|-------|
-| Log directory | `~/.miniclaw/logs/` |
-| Active log | `~/.miniclaw/logs/current.log` (symlink → latest rotated file) |
-| Rotation | Size-based, 5MB per file, keep 3 old files |
-| Format | NDJSON (one JSON object per line) |
-| Levels | `debug` / `info` / `warn` / `error` |
-| Module field | `mod` (e.g. `"mod":"claude"`, `"mod":"chat"`, `"mod":"db"`) |
-| Dual output | File + stderr (stdout reserved for `READY:{port}` protocol) |
+| Item          | Value                                                                   |
+| ------------- | ----------------------------------------------------------------------- |
+| Log directory | `~/.miniclaw/logs/`                                                     |
+| Active log    | `~/.miniclaw/logs/sidecar.log` (rotated to `sidecar.log.1`, `.2`, `.3`) |
+| Rotation      | Size-based, 5MB per file, keep 3 old files                              |
+| Format        | NDJSON (one JSON object per line)                                       |
+| Levels        | `debug` / `info` / `warn` / `error`                                     |
+| Module field  | `mod` (e.g. `"mod":"claude"`, `"mod":"chat"`, `"mod":"db"`)             |
+| Dual output   | File + stderr (stdout reserved for `READY:{port}` protocol)             |
 
 **Quick log commands:**
 
 ```bash
 # Tail live logs
-tail -f ~/.miniclaw/logs/current.log
+tail -f ~/.miniclaw/logs/sidecar.log
 
 # Filter by module
-cat ~/.miniclaw/logs/current.log | jq 'select(.mod=="claude")'
+cat ~/.miniclaw/logs/sidecar.log | jq 'select(.mod=="claude")'
 
 # Filter errors only
-cat ~/.miniclaw/logs/current.log | jq 'select(.level >= 50)'
+cat ~/.miniclaw/logs/sidecar.log | jq 'select(.level >= 50)'
 
 # Show human-readable summary
-cat ~/.miniclaw/logs/current.log | jq -r '[.time, .mod, .msg] | join(" | ")'
+cat ~/.miniclaw/logs/sidecar.log | jq -r '[.time, .mod, .msg] | join(" | ")'
 ```
 
 ### Proxy Credential Auto-Refresh (`.env.local`)
 
 If `PROXY_CLI_COMMAND` is set in `.env.local`, the sidecar runs a wrapper trick on startup to capture `ANTHROPIC_*` env vars from the proxy CLI. Two `.env.local` locations (first match wins):
+
 1. Project root (dev mode)
 2. `~/.miniclaw/.env.local` (production)
 
@@ -233,23 +236,23 @@ The `X-Working-Dir` custom header is **dynamically overridden** per chat request
 
 ### File Naming
 
-| Type | Convention | Example |
-|------|-----------|---------|
-| Components | PascalCase `.tsx` | `ChatView.tsx` |
-| Hooks | `use` prefix `.ts` | `useSidecar.ts` |
-| Routes (sidecar) | kebab-case `.ts` | `chat.ts`, `mcp.ts` |
-| Services | kebab-case `.ts` | `claude-client.ts` |
+| Type             | Convention         | Example             |
+| ---------------- | ------------------ | ------------------- |
+| Components       | PascalCase `.tsx`  | `ChatView.tsx`      |
+| Hooks            | `use` prefix `.ts` | `useSidecar.ts`     |
+| Routes (sidecar) | kebab-case `.ts`   | `chat.ts`, `mcp.ts` |
+| Services         | kebab-case `.ts`   | `claude-client.ts`  |
 
 ### TypeScript Configuration
 
 - **Renderer** (`tsconfig.json`): `bundler` module resolution, `react-jsx`, strict mode, path aliases `@/` → `src/`, `@shared/` → `shared/`
-- **Sidecar** (`sidecar/tsconfig.json`): `bundler` module resolution, `ES2022`, `@shared/*` path alias
+- **Sidecar** (`sidecar/tsconfig.json`): `bundler` module resolution, `ES2022`, `@shared/*` path alias, `@types/bun` for Bun API type checking
 - **Vite/Node** (`tsconfig.node.json`): for `vite.config.ts` only
 
 ### Lint & Formatting
 
 - **Linter**: Oxlint (`oxlint.json`) — React hooks rules, no-unused-vars, prefer-const, eqeqeq
-- **Formatter**: Oxfmt (`.oxfmt.toml`) — 2-space indent, single quotes, no semicolons, trailing commas
+- **Formatter**: Oxfmt (`.oxfmtrc.json`) — 2-space indent, single quotes, no semicolons, trailing commas
 - **Git hooks**: Lefthook (`lefthook.yml`) — pre-commit: lint + format check; pre-push: typecheck + test
 - **Dead code**: Knip (`knip.config.ts`) — detect unused files/exports/dependencies
 - **Before committing**: run `bun run check` (format + lint + typecheck)
@@ -272,13 +275,13 @@ The `X-Working-Dir` custom header is **dynamically overridden** per chat request
 
 ### Command Restrictions
 
-| Forbidden (Proactive) | Reason | Safe Alternative |
-|------------------------|--------|-----------------|
-| `bun run tauri build` | Slow packaging, irrelevant during dev | `bun run build` for build check |
-| Editing `dist/` or `dist-electron/` | Generated output | Edit source files |
-| Editing `node_modules/` | Overwritten on install | Fix in source |
-| Editing `src-tauri/binaries/` | Generated by sidecar build | Run `cd sidecar && bun run build` |
-| `git stash` / `git stash pop` | Risky with multiple agents | Commit WIP to a branch |
+| Forbidden (Proactive)               | Reason                                | Safe Alternative                  |
+| ----------------------------------- | ------------------------------------- | --------------------------------- |
+| `bun run tauri build`               | Slow packaging, irrelevant during dev | `bun run build` for build check   |
+| Editing `dist/` or `dist-electron/` | Generated output                      | Edit source files                 |
+| Editing `node_modules/`             | Overwritten on install                | Fix in source                     |
+| Editing `src-tauri/binaries/`       | Generated by sidecar build            | Run `cd sidecar && bun run build` |
+| `git stash` / `git stash pop`       | Risky with multiple agents            | Commit WIP to a branch            |
 
 ### Dependency Recovery
 
@@ -288,8 +291,8 @@ The `X-Working-Dir` custom header is **dynamically overridden** per chat request
 
 ### Debugging Guidelines
 
-- **Always read logs first**: `cat ~/.miniclaw/logs/current.log | jq .` — the sidecar instruments all key paths with pino structured logs.
-- **Sidecar not starting**: Check `~/.miniclaw/logs/current.log` for startup errors. Also check stderr in terminal for `[sidecar:stderr]` lines.
+- **Always read logs first**: `cat ~/.miniclaw/logs/sidecar.log | jq .` — the sidecar instruments all key paths with pino structured logs.
+- **Sidecar not starting**: Check `~/.miniclaw/logs/sidecar.log` for startup errors. Also check stderr in terminal for `[sidecar:stderr]` lines.
 - **Chat silent failure / no response**: Read logs for `mod=="chat"` and `mod=="claude"` — look for `Stream error caught`, `Session busy`, or missing `Stream completed normally`.
 - **Session stuck as "busy"**: The sidecar resets all stale `runtime_status='running'` sessions to `idle` on startup. Restart the sidecar to auto-fix. Or manually: `sqlite3 ~/.miniclaw/miniclaw.db "UPDATE chat_sessions SET runtime_status='idle'"`
 - **Port already in use**: Run `lsof -ti:1420 | xargs kill -9` to free the Vite port, or check for orphaned sidecar processes.
@@ -344,68 +347,86 @@ Tauri expects the sidecar binary at `src-tauri/binaries/sidecar-{target-triple}`
 
 `SidecarState` in `sidecar.rs` holds the `CommandChild` handle. On app exit (`ExitRequested`), `stop()` calls `child.kill()` to terminate the sidecar process. This prevents orphaned sidecar processes after Tauri quits.
 
+### `bun build --compile` Compatibility (Critical)
+
+The sidecar is compiled to a single binary via `bun build --compile`. This means:
+- **No `pino.transport()`** — worker threads dynamically require target modules (`pino-roll`, `pino/file`) which don't exist inside the bunfs virtual filesystem. Use `pino.multistream()` + `pino.destination()` instead.
+- **No native `.node` addons** — packages like `node-pty`, `better-sqlite3` (npm version) that ship C++ addons won't load from inside the binary. Use Bun built-ins (`bun:sqlite`, `Bun.spawn({ terminal })`) instead.
+- **Bun native PTY** — `Bun.spawn([shell], { terminal: { cols, rows, data() } })` provides real PTY support with zero external dependencies. The subprocess sees a real `/dev/ttys*` and supports `proc.terminal.write()`, `proc.terminal.resize()`, `proc.terminal.close()`.
+
+### Credential Encryption (API Keys)
+
+API keys and sensitive settings are encrypted at rest in SQLite using AES-256-GCM (`sidecar/src/utils/crypto.ts`).
+
+- **Key derivation**: PBKDF2 from machine fingerprint (hostname + homedir + platform + arch) — keys are decryptable only on the same machine.
+- **Encrypted format**: `enc:v1:<iv_hex>:<authTag_hex>:<ciphertext_hex>`
+- **Transparent migration**: `decrypt()` passes through values without the `enc:v1:` prefix unchanged, so existing plaintext data works without migration.
+- **Encrypted fields**: `api_providers.api_key` + settings keys in `SENSITIVE_SETTINGS` set (`anthropic_auth_token`, `anthropic_api_key`, `openai_api_key`, `google_api_key`).
+- **Never store API keys in plaintext** — all provider CRUD and sensitive settings go through `encrypt()`/`decrypt()` in `db/index.ts`.
+
 ## Sidecar API Reference
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/health` | Health check |
-| POST | `/chat` | Send message, receive SSE stream |
-| POST | `/chat/interrupt` | Interrupt active stream |
-| POST | `/chat/permission` | Respond to tool permission request |
-| POST | `/terminal` | Create a new terminal session |
+| Method | Path                          | Purpose                                 |
+| ------ | ----------------------------- | --------------------------------------- |
+| GET    | `/health`                     | Health check                            |
+| POST   | `/chat`                       | Send message, receive SSE stream        |
+| POST   | `/chat/interrupt`             | Interrupt active stream                 |
+| POST   | `/chat/permission`            | Respond to tool permission request      |
+| POST | `/terminal` | Create a new terminal session (accepts `cols`, `rows`) |
+| POST | `/terminal/:id/resize` | Resize terminal PTY (`cols`, `rows`) |
 | GET | `/terminal/:id/ws` | WebSocket for real-time terminal I/O |
 | DELETE | `/terminal/:id` | Kill a terminal session |
-| POST | `/uploads` | File upload handling |
-| GET | `/sessions` | List sessions |
-| POST | `/sessions` | Create session |
-| GET | `/sessions/:id` | Get session |
-| PUT | `/sessions/:id` | Update session |
-| DELETE | `/sessions/:id` | Delete session |
-| GET | `/sessions/:id/messages` | Get messages for session |
-| GET | `/providers` | List API providers |
-| POST | `/providers` | Create provider |
-| PUT | `/providers/:id` | Update provider |
-| DELETE | `/providers/:id` | Delete provider |
-| POST | `/providers/:id/activate` | Set as default provider |
-| GET | `/settings` | Get all settings |
-| PUT | `/settings` | Bulk update settings |
-| PUT | `/settings/:key` | Update single setting |
-| GET | `/files/browse?path=...` | Browse directory tree |
-| GET | `/files/preview?path=...` | Preview file content |
-| GET | `/git/status?cwd=...` | Git status |
-| GET | `/git/log?cwd=...` | Git log |
-| GET | `/git/branches?cwd=...` | List branches |
-| POST | `/git/commit` | Stage and commit |
-| POST | `/git/checkout` | Switch branch |
-| GET | `/mcp` | List MCP server configs |
-| GET | `/mcp/status` | MCP connection status |
-| GET | `/tasks?session_id=...` | List tasks for session |
-| POST | `/tasks` | Create task |
-| PUT | `/tasks/:id` | Update task status |
-| DELETE | `/tasks/:id` | Delete task |
-| GET | `/skills` | List available skills |
-| GET | `/skills/:name` | Get skill content |
-| GET | `/workspace?path=...` | Get workspace config status |
-| POST | `/workspace/setup` | Initialize workspace config files |
-| GET | `/workspace/context?path=...` | Get workspace context for system prompt |
+| POST   | `/uploads`                    | File upload handling                    |
+| GET    | `/sessions`                   | List sessions                           |
+| POST   | `/sessions`                   | Create session                          |
+| GET    | `/sessions/:id`               | Get session                             |
+| PUT    | `/sessions/:id`               | Update session                          |
+| DELETE | `/sessions/:id`               | Delete session                          |
+| GET    | `/sessions/:id/messages`      | Get messages for session                |
+| GET    | `/providers`                  | List API providers                      |
+| POST   | `/providers`                  | Create provider                         |
+| PUT    | `/providers/:id`              | Update provider                         |
+| DELETE | `/providers/:id`              | Delete provider                         |
+| POST   | `/providers/:id/activate`     | Set as default provider                 |
+| GET    | `/settings`                   | Get all settings                        |
+| PUT    | `/settings`                   | Bulk update settings                    |
+| PUT    | `/settings/:key`              | Update single setting                   |
+| GET    | `/files/browse?path=...`      | Browse directory tree                   |
+| GET    | `/files/preview?path=...`     | Preview file content                    |
+| GET    | `/git/status?cwd=...`         | Git status                              |
+| GET    | `/git/log?cwd=...`            | Git log                                 |
+| GET    | `/git/branches?cwd=...`       | List branches                           |
+| POST   | `/git/commit`                 | Stage and commit                        |
+| POST   | `/git/checkout`               | Switch branch                           |
+| GET    | `/mcp`                        | List MCP server configs                 |
+| GET    | `/mcp/status`                 | MCP connection status                   |
+| GET    | `/tasks?session_id=...`       | List tasks for session                  |
+| POST   | `/tasks`                      | Create task                             |
+| PUT    | `/tasks/:id`                  | Update task status                      |
+| DELETE | `/tasks/:id`                  | Delete task                             |
+| GET    | `/skills`                     | List available skills                   |
+| GET    | `/skills/:name`               | Get skill content                       |
+| GET    | `/workspace?path=...`         | Get workspace config status             |
+| POST   | `/workspace/setup`            | Initialize workspace config files       |
+| GET    | `/workspace/context?path=...` | Get workspace context for system prompt |
 
 ## Tauri IPC Commands
 
-| Command | Parameters | Returns | Purpose |
-|---------|-----------|---------|---------|
-| `get_sidecar_port` | — | `u16` | Get the HTTP port of the running sidecar |
-| `get_platform` | — | `String` | Get the current OS name |
+| Command            | Parameters | Returns  | Purpose                                  |
+| ------------------ | ---------- | -------- | ---------------------------------------- |
+| `get_sidecar_port` | —          | `u16`    | Get the HTTP port of the running sidecar |
+| `get_platform`     | —          | `String` | Get the current OS name                  |
 
 ## Tauri Plugins
 
-| Plugin | Purpose |
-|--------|---------|
-| `tauri-plugin-updater` | In-app update support |
-| `tauri-plugin-opener` | Open URLs/files with system default app |
-| `tauri-plugin-shell` | Spawn sidecar process |
-| `tauri-plugin-global-shortcut` | System-wide keyboard shortcuts |
-| `tauri-plugin-window-state` | Persist/restore window size and position |
-| `tauri-plugin-store` | Persistent key-value store (Tauri side) |
+| Plugin                         | Purpose                                  |
+| ------------------------------ | ---------------------------------------- |
+| `tauri-plugin-updater`         | In-app update support                    |
+| `tauri-plugin-opener`          | Open URLs/files with system default app  |
+| `tauri-plugin-shell`           | Spawn sidecar process                    |
+| `tauri-plugin-global-shortcut` | System-wide keyboard shortcuts           |
+| `tauri-plugin-window-state`    | Persist/restore window size and position |
+| `tauri-plugin-store`           | Persistent key-value store (Tauri side)  |
 
 ## Git Workflow
 
@@ -418,14 +439,14 @@ Tauri expects the sidecar binary at `src-tauri/binaries/sidecar-{target-triple}`
 
 After completing a task, evaluate whether to update this file:
 
-| # | Question (YES → update required) | What to Update |
-|---|----------------------------------|----------------|
-| 1 | Added a new sidecar API route? | API Reference table |
-| 2 | Added a new Tauri IPC command? | Tauri IPC Commands table |
-| 3 | Added a new Tauri plugin? | Tauri Plugins table |
-| 4 | Changed the sidecar protocol? | Architecture / Known Pitfalls |
-| 5 | Added a new database table? | Database section |
-| 6 | Established a new architectural pattern? | Key Architectural Patterns |
+| #   | Question (YES → update required)         | What to Update                |
+| --- | ---------------------------------------- | ----------------------------- |
+| 1   | Added a new sidecar API route?           | API Reference table           |
+| 2   | Added a new Tauri IPC command?           | Tauri IPC Commands table      |
+| 3   | Added a new Tauri plugin?                | Tauri Plugins table           |
+| 4   | Changed the sidecar protocol?            | Architecture / Known Pitfalls |
+| 5   | Added a new database table?              | Database section              |
+| 6   | Established a new architectural pattern? | Key Architectural Patterns    |
 
 **If ALL answers are NO** → skip update.
 **Do NOT update for**: bug fixes, minor refactors, feature additions following existing patterns.

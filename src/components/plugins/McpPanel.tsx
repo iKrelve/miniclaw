@@ -2,64 +2,70 @@
  * McpPanel — MCP server configuration and status management.
  */
 
-import { useEffect, useState, useCallback } from 'react';
-import { useSidecar } from '../../hooks/useSidecar';
-import { Button } from '../ui/button';
-import { Puzzle, RefreshCw, Circle } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { useEffect, useState, useCallback } from 'react'
+import { useSidecar } from '../../hooks/useSidecar'
+import { Button } from '../ui/button'
+import { Puzzle, RefreshCw, Circle } from 'lucide-react'
+import { cn } from '../../lib/utils'
 
 interface McpServer {
-  name: string;
+  name: string
   config: {
-    type?: string;
-    command?: string;
-    url?: string;
-    args?: string[];
-  };
+    type?: string
+    command?: string
+    url?: string
+    args?: string[]
+  }
 }
 
 interface McpStatus {
-  name: string;
-  status: string;
+  name: string
+  status: string
 }
 
 export function McpPanel() {
-  const { baseUrl } = useSidecar();
-  const [servers, setServers] = useState<McpServer[]>([]);
-  const [statuses, setStatuses] = useState<McpStatus[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { baseUrl } = useSidecar()
+  const [servers, setServers] = useState<McpServer[]>([])
+  const [statuses, setStatuses] = useState<McpStatus[]>([])
+  const [loading, setLoading] = useState(false)
 
   const refresh = useCallback(async () => {
-    if (!baseUrl) return;
-    setLoading(true);
+    if (!baseUrl) return
+    setLoading(true)
     try {
       const [serversRes, statusRes] = await Promise.all([
         fetch(`${baseUrl}/mcp`),
         fetch(`${baseUrl}/mcp/status`),
-      ]);
-      const serversData = await serversRes.json();
-      const statusData = await statusRes.json();
-      setServers(serversData.servers || []);
-      setStatuses(statusData.servers || []);
+      ])
+      const serversData = await serversRes.json()
+      const statusData = await statusRes.json()
+      setServers(serversData.servers || [])
+      setStatuses(statusData.servers || [])
     } catch {
       // error
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, [baseUrl]);
+  }, [baseUrl])
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
-  const getStatus = (name: string) => statuses.find((s) => s.name === name)?.status || 'unknown';
+  const getStatus = (name: string) => statuses.find((s) => s.name === name)?.status || 'unknown'
 
   const statusColor = (status: string) => {
     switch (status) {
-      case 'connected': return 'text-green-500';
-      case 'configured': return 'text-blue-500';
-      case 'error': return 'text-red-500';
-      default: return 'text-zinc-400';
+      case 'connected':
+        return 'text-green-500'
+      case 'configured':
+        return 'text-blue-500'
+      case 'error':
+        return 'text-red-500'
+      default:
+        return 'text-zinc-400'
     }
-  };
+  }
 
   return (
     <div className="flex-1 overflow-y-auto p-6 max-w-2xl mx-auto space-y-6">
@@ -75,9 +81,12 @@ export function McpPanel() {
       </div>
 
       <p className="text-sm text-zinc-500">
-        MCP 服务器配置来源：<code className="text-xs bg-zinc-100 dark:bg-zinc-800 px-1 rounded">~/.claude.json</code>、
-        <code className="text-xs bg-zinc-100 dark:bg-zinc-800 px-1 rounded">~/.claude/settings.json</code>、
-        项目 <code className="text-xs bg-zinc-100 dark:bg-zinc-800 px-1 rounded">.mcp.json</code>
+        MCP 服务器配置来源：
+        <code className="text-xs bg-zinc-100 dark:bg-zinc-800 px-1 rounded">~/.claude.json</code>、
+        <code className="text-xs bg-zinc-100 dark:bg-zinc-800 px-1 rounded">
+          ~/.claude/settings.json
+        </code>
+        、 项目 <code className="text-xs bg-zinc-100 dark:bg-zinc-800 px-1 rounded">.mcp.json</code>
       </p>
 
       {servers.length === 0 ? (
@@ -89,7 +98,7 @@ export function McpPanel() {
       ) : (
         <div className="space-y-3">
           {servers.map((server) => {
-            const status = getStatus(server.name);
+            const status = getStatus(server.name)
             return (
               <div
                 key={server.name}
@@ -111,10 +120,10 @@ export function McpPanel() {
                   )}
                 </div>
               </div>
-            );
+            )
           })}
         </div>
       )}
     </div>
-  );
+  )
 }

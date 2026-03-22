@@ -2,57 +2,65 @@
  * SkillsPanel — Skills marketplace for browsing and viewing agent skills.
  */
 
-import { useEffect, useState, useCallback } from 'react';
-import { useSidecar } from '../../hooks/useSidecar';
-import { Sparkles, Search, Eye } from 'lucide-react';
-import { cn } from '../../lib/utils';
-import { MarkdownRenderer } from '../chat/MarkdownRenderer';
+import { useEffect, useState, useCallback } from 'react'
+import { useSidecar } from '../../hooks/useSidecar'
+import { Sparkles, Search, Eye } from 'lucide-react'
+import { cn } from '../../lib/utils'
+import { MarkdownRenderer } from '../chat/MarkdownRenderer'
 
 interface Skill {
-  name: string;
-  description: string;
-  source: string;
-  path: string;
-  content?: string;
+  name: string
+  description: string
+  source: string
+  path: string
+  content?: string
 }
 
 export function SkillsPanel() {
-  const { baseUrl } = useSidecar();
-  const [skills, setSkills] = useState<Skill[]>([]);
-  const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<Skill | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { baseUrl } = useSidecar()
+  const [skills, setSkills] = useState<Skill[]>([])
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<Skill | null>(null)
+  const [loading, setLoading] = useState(false)
 
   const loadSkills = useCallback(async () => {
-    if (!baseUrl) return;
-    setLoading(true);
+    if (!baseUrl) return
+    setLoading(true)
     try {
-      const res = await fetch(`${baseUrl}/skills`);
-      const data = await res.json();
-      setSkills(data.skills || []);
+      const res = await fetch(`${baseUrl}/skills`)
+      const data = await res.json()
+      setSkills(data.skills || [])
     } catch {
       // error
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, [baseUrl]);
+  }, [baseUrl])
 
-  useEffect(() => { loadSkills(); }, [loadSkills]);
+  useEffect(() => {
+    loadSkills()
+  }, [loadSkills])
 
-  const handleView = useCallback(async (skill: Skill) => {
-    if (!baseUrl) return;
-    try {
-      const res = await fetch(`${baseUrl}/skills/${encodeURIComponent(skill.name)}`);
-      const data = await res.json();
-      setSelected({ ...skill, content: data.content });
-    } catch {
-      // error
-    }
-  }, [baseUrl]);
+  const handleView = useCallback(
+    async (skill: Skill) => {
+      if (!baseUrl) return
+      try {
+        const res = await fetch(`${baseUrl}/skills/${encodeURIComponent(skill.name)}`)
+        const data = await res.json()
+        setSelected({ ...skill, content: data.content })
+      } catch {
+        // error
+      }
+    },
+    [baseUrl],
+  )
 
   const filtered = skills.filter(
-    (s) => !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.description.toLowerCase().includes(search.toLowerCase()),
-  );
+    (s) =>
+      !search ||
+      s.name.toLowerCase().includes(search.toLowerCase()) ||
+      s.description.toLowerCase().includes(search.toLowerCase()),
+  )
 
   return (
     <div className="flex-1 flex min-h-0">
@@ -93,7 +101,9 @@ export function SkillsPanel() {
                   : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
               )}
             >
-              <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{skill.name}</div>
+              <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                {skill.name}
+              </div>
               <div className="text-xs text-zinc-500 mt-0.5 line-clamp-1">{skill.description}</div>
               <span className="text-[10px] text-zinc-400 mt-1 inline-block bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
                 {skill.source}
@@ -121,5 +131,5 @@ export function SkillsPanel() {
         )}
       </div>
     </div>
-  );
+  )
 }
