@@ -11,7 +11,6 @@ import type {
   SDKAssistantMessage,
   SDKUserMessage,
   SDKResultMessage,
-  SDKResultSuccess,
   SDKPartialAssistantMessage,
   SDKSystemMessage,
   SDKToolProgressMessage,
@@ -31,8 +30,6 @@ import { findClaudeBinary, getExpandedPath } from './platform'
 import { captureModels } from './sdk-capabilities'
 import { logger } from '../utils/logger'
 import os from 'os'
-import fs from 'fs'
-import path from 'path'
 
 // ==========================================
 // Active conversations registry (for interrupt)
@@ -195,7 +192,6 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
     systemPrompt,
     workingDirectory,
     mcpServers,
-    mode,
     permissionMode,
     permissionProfile,
     providerId,
@@ -234,6 +230,29 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
           const provider = getProvider(providerId) as Record<string, unknown> | undefined
           if (provider?.base_url) sdkEnv.ANTHROPIC_BASE_URL = provider.base_url as string
           if (provider?.api_key) sdkEnv.ANTHROPIC_AUTH_TOKEN = provider.api_key as string
+          // Inject extra_env for Bedrock/Vertex providers
+          if (provider?.extra_env && typeof provider.extra_env === 'string') {
+            try {
+              const extraEnv = JSON.parse(provider.extra_env) as Record<string, string>
+              for (const [key, value] of Object.entries(extraEnv)) {
+                // Don't override existing env vars (priority chain)
+                if (!sdkEnv[key]) {
+                  sdkEnv[key] = value
+                }
+              }
+              logger.debug('claude', 'Injected extra_env from provider', {
+                sessionId,
+                providerId,
+                keys: Object.keys(extraEnv),
+              })
+            } catch (e) {
+              logger.warn('claude', 'Failed to parse provider extra_env', {
+                sessionId,
+                providerId,
+                error: e instanceof Error ? e.message : String(e),
+              })
+            }
+          }
         }
         // Global settings fallback (user-configured via Settings UI)
         const settingsBaseUrl = getSetting('anthropic_base_url')
@@ -253,23 +272,25 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
         // (the proxy refresher may have captured a stale temp dir path)
         if (sdkEnv.ANTHROPIC_CUSTOM_HEADERS || sdkEnv.ANTHROPIC_BASE_URL) {
           const effectiveCwd = resolvedCwd || os.homedir()
+          // Encode non-ASCII chars — HTTP headers reject raw multibyte (e.g. Chinese path segments)
+          const safeCwd = effectiveCwd.replace(/[^\x20-\x7E]/g, (ch) => encodeURIComponent(ch))
           const existing = sdkEnv.ANTHROPIC_CUSTOM_HEADERS || ''
           // Replace existing X-Working-Dir or append if not present
           if (existing.includes('X-Working-Dir:')) {
             sdkEnv.ANTHROPIC_CUSTOM_HEADERS = existing.replace(
               /X-Working-Dir:\s*[^\n,;]*/,
-              `X-Working-Dir: ${effectiveCwd}`,
+              `X-Working-Dir: ${safeCwd}`,
             )
           } else if (existing.includes('X-Branch:')) {
             // X-Branch is also a proxy header — replace with X-Working-Dir
             sdkEnv.ANTHROPIC_CUSTOM_HEADERS = existing.replace(
               /X-Branch:\s*[^\n,;]*/,
-              `X-Working-Dir: ${effectiveCwd}`,
+              `X-Working-Dir: ${safeCwd}`,
             )
           } else if (existing) {
-            sdkEnv.ANTHROPIC_CUSTOM_HEADERS = `${existing}, X-Working-Dir: ${effectiveCwd}`
+            sdkEnv.ANTHROPIC_CUSTOM_HEADERS = `${existing}, X-Working-Dir: ${safeCwd}`
           } else {
-            sdkEnv.ANTHROPIC_CUSTOM_HEADERS = `X-Working-Dir: ${effectiveCwd}`
+            sdkEnv.ANTHROPIC_CUSTOM_HEADERS = `X-Working-Dir: ${safeCwd}`
           }
         }
 

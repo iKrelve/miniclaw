@@ -5,7 +5,18 @@
  */
 
 import { useEffect, useCallback, useState, useRef } from 'react'
-import { Plus, Search, Trash2, FolderOpen, ChevronRight, ChevronDown, X } from 'lucide-react'
+import {
+  Plus,
+  Search,
+  Trash2,
+  FolderOpen,
+  ChevronRight,
+  ChevronDown,
+  X,
+  MoreHorizontal,
+  Copy,
+} from 'lucide-react'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import {
   Tooltip,
   TooltipContent,
@@ -15,6 +26,7 @@ import {
 } from '@radix-ui/react-tooltip'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog'
 import { cn } from '../../lib/utils'
+import { toast } from '../ui/toast'
 import { useAppStore } from '../../stores'
 import { useSidecar } from '../../hooks/useSidecar'
 import { useDirectoryPicker } from '../../hooks/useDirectoryPicker'
@@ -36,6 +48,7 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
   const { pickDirectory } = useDirectoryPicker()
   const [search, setSearch] = useState('')
   const [hovered, setHovered] = useState<string | null>(null)
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null) // track which session's dropdown is open
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [pending, setPending] = useState<PendingDelete>(null)
 
@@ -82,12 +95,6 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
       onSelectSession('')
     }
   }, [pickDirectory, setActiveSession, onSelectSession])
-
-  // Stage a session for deletion (opens confirm dialog)
-  const requestDeleteSession = useCallback((e: React.MouseEvent, id: string, title: string) => {
-    e.stopPropagation()
-    setPending({ type: 'session', id, title })
-  }, [])
 
   // Stage a project group for deletion (opens confirm dialog)
   const requestDeleteProject = useCallback(
@@ -137,6 +144,16 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
     },
     [setActiveSession, onSelectSession],
   )
+
+  // Copy session ID to clipboard with toast feedback
+  const handleCopyId = useCallback(async (id: string) => {
+    try {
+      await navigator.clipboard.writeText(id)
+      toast.success('已复制会话 ID')
+    } catch {
+      toast.error('复制失败')
+    }
+  }, [])
 
   const toggleGroup = useCallback((dir: string) => {
     setCollapsed((prev) => {
@@ -280,7 +297,9 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
                             key={session.id}
                             className="group/item relative"
                             onMouseEnter={() => setHovered(session.id)}
-                            onMouseLeave={() => setHovered(null)}
+                            onMouseLeave={() => {
+                              if (!menuOpenId) setHovered(null)
+                            }}
                           >
                             <button
                               onClick={() => {
@@ -297,14 +316,51 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
                               {session.title || 'New Chat'}
                             </button>
                             {(isHovered || isActive) && (
-                              <button
-                                onClick={(e) =>
-                                  requestDeleteSession(e, session.id, session.title || 'New Chat')
-                                }
-                                className="absolute right-1 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                              <DropdownMenu.Root
+                                onOpenChange={(isOpen) => {
+                                  setMenuOpenId(isOpen ? session.id : null)
+                                  if (!isOpen) setHovered(null)
+                                }}
                               >
-                                <Trash2 size={12} />
-                              </button>
+                                <DropdownMenu.Trigger asChild>
+                                  <button
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="absolute right-1 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                                  >
+                                    <MoreHorizontal size={14} />
+                                  </button>
+                                </DropdownMenu.Trigger>
+                                <DropdownMenu.Portal>
+                                  <DropdownMenu.Content
+                                    side="right"
+                                    align="start"
+                                    sideOffset={4}
+                                    className="z-50 min-w-[140px] rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-1 shadow-lg animate-in fade-in-0 zoom-in-95"
+                                  >
+                                    <DropdownMenu.Item
+                                      onSelect={() => handleCopyId(session.id)}
+                                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer outline-none hover:bg-zinc-100 dark:hover:bg-zinc-800 focus:bg-zinc-100 dark:focus:bg-zinc-800 transition-colors"
+                                    >
+                                      <Copy size={12} />
+                                      复制会话 ID
+                                    </DropdownMenu.Item>
+                                    <DropdownMenu.Separator className="my-1 h-px bg-zinc-200 dark:bg-zinc-700" />
+                                    <DropdownMenu.Item
+                                      onSelect={() =>
+                                        setPending({
+                                          type: 'session',
+                                          id: session.id,
+                                          title: session.title || 'New Chat',
+                                        })
+                                      }
+                                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-red-500 cursor-pointer outline-none hover:bg-red-50 dark:hover:bg-red-900/20 focus:bg-red-50 dark:focus:bg-red-900/20 transition-colors"
+                                    >
+                                      <Trash2 size={12} />
+                                      删除会话
+                                    </DropdownMenu.Item>
+                                  </DropdownMenu.Content>
+                                </DropdownMenu.Portal>
+                              </DropdownMenu.Root>
                             )}
                           </div>
                         )

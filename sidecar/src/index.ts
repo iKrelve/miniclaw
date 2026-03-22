@@ -177,6 +177,17 @@ if (
   }
 }
 
+// Auto-register AWS Bedrock provider if AWS credentials are available.
+// This scans available Claude models via ListFoundationModels API.
+try {
+  const { autoRegisterBedrock } = await import('./services/bedrock-scanner')
+  await autoRegisterBedrock()
+} catch (err) {
+  logger.warn('startup', 'Failed to auto-register Bedrock provider', {
+    error: err instanceof Error ? err.message : String(err),
+  })
+}
+
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { getAvailablePort } from './utils/port'

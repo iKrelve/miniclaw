@@ -102,6 +102,7 @@ function initSchema(db: Database): void {
       type TEXT NOT NULL,
       api_key TEXT NOT NULL DEFAULT '',
       base_url TEXT NOT NULL DEFAULT '',
+      extra_env TEXT NOT NULL DEFAULT '{}',
       is_active INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -293,13 +294,16 @@ export function createProvider(opts: {
   type: string
   api_key: string
   base_url?: string
+  extra_env?: string
 }) {
   const id = genId()
   // Encrypt the API key before storing
   const encryptedKey = encrypt(opts.api_key)
   getDb()
-    .prepare('INSERT INTO api_providers (id, name, type, api_key, base_url) VALUES (?, ?, ?, ?, ?)')
-    .run(id, opts.name, opts.type, encryptedKey, opts.base_url || '')
+    .prepare(
+      'INSERT INTO api_providers (id, name, type, api_key, base_url, extra_env) VALUES (?, ?, ?, ?, ?, ?)',
+    )
+    .run(id, opts.name, opts.type, encryptedKey, opts.base_url || '', opts.extra_env || '{}')
   return getProvider(id)!
 }
 
@@ -330,7 +334,7 @@ export function updateProvider(id: string, updates: Record<string, unknown>) {
   const fields: string[] = []
   const values: (string | number | boolean | null)[] = []
   for (const [key, value] of Object.entries(updates)) {
-    if (['name', 'api_key', 'base_url', 'is_active'].includes(key)) {
+    if (['name', 'api_key', 'base_url', 'extra_env', 'is_active'].includes(key)) {
       fields.push(`${key} = ?`)
       // Encrypt api_key before storing
       if (key === 'api_key' && typeof value === 'string') {
@@ -373,6 +377,7 @@ export function upsertProvider(opts: {
   type: string
   api_key: string
   base_url: string
+  extra_env?: string
 }): string {
   const existing = findProviderByName(opts.name)
   if (existing) {
@@ -380,6 +385,7 @@ export function upsertProvider(opts: {
     updateProvider(existing.id as string, {
       api_key: opts.api_key,
       base_url: opts.base_url,
+      extra_env: opts.extra_env,
     })
     return existing.id as string
   }

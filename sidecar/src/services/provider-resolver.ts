@@ -6,6 +6,7 @@
  */
 
 import { getProvider, listProviders, getSetting } from '../db'
+import { BEDROCK_MODELS } from './bedrock-scanner'
 
 // ==========================================
 // Model Catalog
@@ -46,20 +47,9 @@ const MODEL_CATALOG: Record<string, CatalogModel[]> = {
       provider: 'google',
     },
   ],
-  bedrock: [
-    {
-      id: 'anthropic.claude-sonnet-4-20250514-v1:0',
-      name: 'Claude Sonnet 4 (Bedrock)',
-      contextWindow: 200000,
-      provider: 'bedrock',
-    },
-    {
-      id: 'anthropic.claude-3-5-haiku-20241022-v1:0',
-      name: 'Claude 3.5 Haiku (Bedrock)',
-      contextWindow: 200000,
-      provider: 'bedrock',
-    },
-  ],
+  // Bedrock models are dynamically populated by bedrock-scanner.ts
+  // See BEDROCK_MODELS cache populated at startup
+  bedrock: [],
   vertex: [
     {
       id: 'claude-sonnet-4@20250514',
@@ -73,6 +63,10 @@ const MODEL_CATALOG: Record<string, CatalogModel[]> = {
 }
 
 export function getModelsForProvider(providerType: string): CatalogModel[] {
+  // For bedrock, return dynamic models from AWS API scan
+  if (providerType === 'bedrock') {
+    return BEDROCK_MODELS.length > 0 ? BEDROCK_MODELS : MODEL_CATALOG['bedrock']
+  }
   return MODEL_CATALOG[providerType] || []
 }
 

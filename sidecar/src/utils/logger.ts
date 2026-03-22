@@ -62,10 +62,17 @@ const writer = Bun.file(LOG_FILE).writer()
 /**
  * Write a single NDJSON log line to file + stderr.
  */
+/** Format Date as Beijing time (UTC+8) ISO string: YYYY-MM-DDTHH:mm:ss.sss+08:00 */
+function toBeijingISO(d: Date): string {
+  const utc = d.getTime()
+  const beijing = new Date(utc + 8 * 3600_000)
+  return beijing.toISOString().replace('Z', '+08:00')
+}
+
 function emit(level: Level, mod: string, msg: string, data?: Record<string, unknown>) {
   const entry = {
     level: LEVELS[level],
-    time: new Date().toISOString(),
+    time: toBeijingISO(new Date()),
     mod,
     msg,
     ...data,

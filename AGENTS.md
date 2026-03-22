@@ -288,11 +288,31 @@ The `provider-resolver.ts` service supports multiple AI providers with a built-i
 - **Anthropic** (Claude via SDK shorthand: `sonnet`, `opus`, `haiku`)
 - **OpenAI** (`gpt-4o`, `gpt-4o-mini`, `o3-mini`, `gpt-4-turbo`)
 - **Google** (`gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.0-flash`)
-- **Bedrock** (Claude via AWS Bedrock)
+- **Bedrock** (Claude via AWS Bedrock — auto-scanned from AWS account)
 - **Vertex** (Claude via Google Vertex AI)
 - **Custom** (user-typed model name)
 
 Resolution priority: request → session → default setting → env. The `sdk-capabilities.ts` service caches real model lists from active Claude Code SDK Query instances.
+
+### AWS Bedrock Auto-Scan
+
+On startup, the sidecar automatically detects local AWS credentials and scans available Bedrock models:
+
+1. **Credential Detection** — Uses `@aws-sdk/credential-providers` to resolve credentials from:
+   - Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
+   - AWS profile (`AWS_PROFILE`, `CLAUDE_CODE_AWS_PROFILE`)
+   - `~/.aws/credentials` default profile
+   - IMDS (EC2 instance metadata) if applicable
+
+2. **Model Scanning** — Calls `BedrockClient.listFoundationModels()` to discover available Claude models in the detected region.
+
+3. **Auto-Registration** — If valid credentials exist, an "AWS Bedrock" provider is auto-registered with:
+   - `extra_env` containing `CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION`, and optional `CLAUDE_CODE_AWS_PROFILE`
+   - Dynamic model list cached in `BEDROCK_MODELS` (used by `provider-resolver.ts`)
+
+4. **Runtime Injection** — When a Bedrock provider is used for chat, `claude-client.ts` injects the `extra_env` variables into the SDK environment.
+
+The `extra_env` field in `api_providers` table stores provider-specific environment variables as JSON.
 
 ### Proxy Credential Auto-Refresh (`.env.local`)
 

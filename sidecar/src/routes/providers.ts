@@ -26,11 +26,17 @@ providerRoutes.get('/', (c) => {
 /** POST /providers — Create a new provider */
 providerRoutes.post('/', async (c) => {
   const body = await c.req.json()
-  const { name, type, api_key, base_url } = body
+  const { name, type, api_key, base_url, extra_env } = body
   if (!name || !type) {
     return c.json({ error: 'name and type are required' }, 400)
   }
-  const provider = createProvider({ name, type, api_key: api_key || '', base_url })
+  const provider = createProvider({
+    name,
+    type,
+    api_key: api_key || '',
+    base_url,
+    extra_env,
+  })
   return c.json({ provider }, 201)
 })
 
