@@ -28,6 +28,8 @@ import type { PermissionResult } from '@anthropic-ai/claude-agent-sdk'
 import { getSetting, getProvider, updateSdkSessionId } from '../db'
 import { findClaudeBinary, getExpandedPath } from './platform'
 import { captureModels } from './sdk-capabilities'
+import { getBrowserMcpServer } from './browser-tool'
+import { chromeManager } from './chrome-manager'
 import { logger } from '../utils/logger'
 import os from 'os'
 
@@ -351,6 +353,18 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
         // MCP servers
         if (mcpServers && Object.keys(mcpServers).length > 0) {
           queryOptions.mcpServers = toSdkMcpConfig(mcpServers)
+        }
+
+        // Inject browser MCP server when Chrome is running
+        if (chromeManager.isRunning()) {
+          const browserServer = getBrowserMcpServer()
+          if (browserServer) {
+            queryOptions.mcpServers = {
+              ...(queryOptions.mcpServers || {}),
+              'miniclaw-browser': browserServer,
+            }
+            logger.info('claude', 'Injected browser MCP server', { sessionId })
+          }
         }
 
         // Resume session

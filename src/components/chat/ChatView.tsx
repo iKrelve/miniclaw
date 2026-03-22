@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { MessageList } from './MessageList'
 import { MessageInput } from './MessageInput'
 import { ChatPermissionSelector } from './ChatPermissionSelector'
+import { BrowserModeSelector, type BrowserMode } from './BrowserModeSelector'
 import { ContextUsageIndicator } from './ContextUsageIndicator'
 import { FileDropZone } from './FileDropZone'
 import { useSSEStream } from '../../hooks/useSSEStream'
@@ -62,6 +63,16 @@ export function ChatView() {
   const [permissionProfile, setPermissionProfile] = useState<'default' | 'full_access'>(
     () => activeSession?.permission_profile || 'default',
   )
+
+  // Browser mode — global (persisted in localStorage)
+  const [browserMode, setBrowserMode] = useState<BrowserMode>(
+    () => (localStorage.getItem('miniclaw:browser-mode') as BrowserMode) || 'off',
+  )
+
+  const handleBrowserModeChange = useCallback((mode: BrowserMode) => {
+    setBrowserMode(mode)
+    localStorage.setItem('miniclaw:browser-mode', mode)
+  }, [])
 
   // Sync model/provider/permission from active session when switching sessions
   useEffect(() => {
@@ -303,10 +314,13 @@ export function ChatView() {
           currentProviderId={currentProviderId}
           onModelChange={handleModelChange}
           extraToolbar={
-            <ChatPermissionSelector
-              permissionProfile={permissionProfile}
-              onPermissionChange={handlePermissionChange}
-            />
+            <>
+              <ChatPermissionSelector
+                permissionProfile={permissionProfile}
+                onPermissionChange={handlePermissionChange}
+              />
+              <BrowserModeSelector mode={browserMode} onModeChange={handleBrowserModeChange} />
+            </>
           }
         />
         <Toaster position="bottom-right" />
@@ -342,11 +356,14 @@ export function ChatView() {
         currentProviderId={currentProviderId}
         onModelChange={handleModelChange}
         extraToolbar={
-          <ChatPermissionSelector
-            sessionId={activeSessionId}
-            permissionProfile={permissionProfile}
-            onPermissionChange={handlePermissionChange}
-          />
+          <>
+            <ChatPermissionSelector
+              sessionId={activeSessionId}
+              permissionProfile={permissionProfile}
+              onPermissionChange={handlePermissionChange}
+            />
+            <BrowserModeSelector mode={browserMode} onModeChange={handleBrowserModeChange} />
+          </>
         }
       />
       <Toaster position="bottom-right" />

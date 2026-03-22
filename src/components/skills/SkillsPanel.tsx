@@ -1,9 +1,9 @@
 /**
- * SkillsPanel — Full-featured Skills management panel matching CodePilot.
+ * SkillsPanel — Full-featured Skills management panel.
  *
  * Features:
- * - Tab view: Local (global + project slash commands) / Installed (agent skills)
- * - Search and filter
+ * - Tab view: Local (all local skills) / Marketplace (browse & install from skills.sh)
+ * - Search and filter local skills
  * - Create new slash command
  * - Edit existing skill content
  * - Delete slash commands
@@ -13,13 +13,14 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useSidecar } from '../../hooks/useSidecar'
-import { Sparkles, Search, Plus, Save, Trash2, FileText, Package, X } from 'lucide-react'
+import { Sparkles, Search, Plus, Save, Trash2, FileText, Store, X } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { MessageResponse } from '../ai-elements/message'
+import { MarketplaceBrowser } from './MarketplaceBrowser'
 import type { SkillFile, SkillKind } from '../../../shared/types'
 
-type ViewTab = 'local' | 'installed'
+type ViewTab = 'local' | 'marketplace'
 
 export function SkillsPanel() {
   const { baseUrl } = useSidecar()
@@ -136,12 +137,7 @@ export function SkillsPanel() {
     }
   }, [baseUrl, createName, createContent, createScope, loadSkills])
 
-  const localSkills = skills.filter((s) => s.source === 'global' || s.source === 'project')
-  const installedSkills = skills.filter((s) => s.source === 'installed')
-
-  const currentSkills = tab === 'local' ? localSkills : installedSkills
-
-  const filtered = currentSkills.filter(
+  const filtered = skills.filter(
     (s) =>
       !search ||
       s.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -168,169 +164,181 @@ export function SkillsPanel() {
   )
 
   return (
-    <div className="flex-1 flex min-h-0">
-      {/* Left panel: tabs + list */}
-      <div className="w-80 border-r border-zinc-200 dark:border-zinc-800 flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles size={18} className="text-amber-500" />
-            <h2 className="font-bold">技能</h2>
-            <span className="text-xs text-zinc-500 ml-auto">{skills.length}</span>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex gap-1 mb-3">
-            <button
-              onClick={() => setTab('local')}
-              className={cn(
-                'flex-1 text-xs py-1.5 rounded-lg font-medium transition-colors',
-                tab === 'local'
-                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                  : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800',
-              )}
-            >
-              <FileText size={12} className="inline mr-1" />
-              本地 ({localSkills.length})
-            </button>
-            <button
-              onClick={() => setTab('installed')}
-              className={cn(
-                'flex-1 text-xs py-1.5 rounded-lg font-medium transition-colors',
-                tab === 'installed'
-                  ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
-                  : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800',
-              )}
-            >
-              <Package size={12} className="inline mr-1" />
-              已安装 ({installedSkills.length})
-            </button>
-          </div>
-
-          {/* Search */}
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索技能..."
-              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700"
-            />
-          </div>
-
-          {/* Create button (only for local tab) */}
-          {tab === 'local' && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full mt-3"
-              onClick={() => setShowCreate(true)}
-            >
-              <Plus size={14} />
-              新建 Slash Command
-            </Button>
-          )}
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Top bar: tabs */}
+      <div className="px-4 pt-4 pb-3 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles size={18} className="text-amber-500" />
+          <h2 className="font-bold">技能</h2>
+          <span className="text-xs text-zinc-500 ml-auto">{skills.length}</span>
         </div>
 
-        {/* Skill list */}
-        <div className="flex-1 overflow-y-auto">
-          {filtered.length === 0 && (
-            <div className="text-center py-8 text-zinc-400 text-sm">
-              {loading ? '加载中...' : '未找到技能'}
-            </div>
-          )}
-          {filtered.map((skill) => (
-            <div
-              key={`${skill.source}-${skill.name}`}
-              className={cn(
-                'group relative w-full text-left px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 transition-colors cursor-pointer',
-                selected?.name === skill.name && selected?.source === skill.source
-                  ? 'bg-blue-50 dark:bg-blue-900/20'
-                  : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
-              )}
-              onClick={() => handleView(skill)}
-            >
-              <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                /{skill.name}
-              </div>
-              <div className="text-xs text-zinc-500 mt-0.5 line-clamp-1">{skill.description}</div>
-              <div className="flex items-center gap-1.5 mt-1.5">
-                {kindBadge(skill.kind)}
-                {sourceBadge(skill.source)}
-                {skill.installedSource && sourceBadge(skill.installedSource)}
-              </div>
-              {/* Delete button for slash commands */}
-              {skill.kind === 'slash_command' && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleDelete(skill)
-                  }}
-                  className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-red-500"
-                >
-                  <Trash2 size={14} />
-                </button>
-              )}
-            </div>
-          ))}
+        {/* Segmented tabs */}
+        <div className="flex gap-1">
+          <button
+            onClick={() => setTab('local')}
+            className={cn(
+              'flex-1 text-xs py-1.5 rounded-lg font-medium transition-colors',
+              tab === 'local'
+                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800',
+            )}
+          >
+            <FileText size={12} className="inline mr-1" />
+            我的技能
+          </button>
+          <button
+            onClick={() => setTab('marketplace')}
+            className={cn(
+              'flex-1 text-xs py-1.5 rounded-lg font-medium transition-colors',
+              tab === 'marketplace'
+                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800',
+            )}
+          >
+            <Store size={12} className="inline mr-1" />
+            技能市场
+          </button>
         </div>
       </div>
 
-      {/* Right panel: content viewer / editor */}
-      <div className="flex-1 overflow-auto p-6">
-        {selected?.content !== undefined ? (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-bold">/{selected.name}</h2>
-                <p className="text-xs text-zinc-500 mt-0.5">{selected.filePath}</p>
+      {/* Content area */}
+      {tab === 'marketplace' ? (
+        <MarketplaceBrowser onInstalled={loadSkills} />
+      ) : (
+        <div className="flex flex-1 min-h-0">
+          {/* Left panel: search + list */}
+          <div className="w-80 border-r border-zinc-200 dark:border-zinc-800 flex flex-col">
+            <div className="p-4">
+              {/* Search */}
+              <div className="relative mb-3">
+                <Search
+                  size={14}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400"
+                />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="搜索技能..."
+                  className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700"
+                />
               </div>
-              <div className="flex items-center gap-2">
+
+              {/* Create button */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => setShowCreate(true)}
+              >
+                <Plus size={14} />
+                新建 Slash Command
+              </Button>
+            </div>
+
+            {/* Skill list */}
+            <div className="flex-1 overflow-y-auto">
+              {filtered.length === 0 && (
+                <div className="text-center py-8 text-zinc-400 text-sm">
+                  {loading ? '加载中...' : '未找到技能'}
+                </div>
+              )}
+              {filtered.map((skill) => (
+                <div
+                  key={`${skill.source}-${skill.name}`}
+                  className={cn(
+                    'group relative w-full text-left px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 transition-colors cursor-pointer',
+                    selected?.name === skill.name && selected?.source === skill.source
+                      ? 'bg-blue-50 dark:bg-blue-900/20'
+                      : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
+                  )}
+                  onClick={() => handleView(skill)}
+                >
+                  <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                    /{skill.name}
+                  </div>
+                  <div className="text-xs text-zinc-500 mt-0.5 line-clamp-1">
+                    {skill.description}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    {kindBadge(skill.kind)}
+                    {sourceBadge(skill.source)}
+                    {skill.installedSource && sourceBadge(skill.installedSource)}
+                  </div>
+                  {/* Delete button for slash commands */}
+                  {skill.kind === 'slash_command' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDelete(skill)
+                      }}
+                      className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-red-500"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Right panel: content viewer / editor */}
+          <div className="flex-1 overflow-auto p-6">
+            {selected?.content !== undefined ? (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-lg font-bold">/{selected.name}</h2>
+                    <p className="text-xs text-zinc-500 mt-0.5">{selected.filePath}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {editing ? (
+                      <>
+                        <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
+                          取消
+                        </Button>
+                        <Button size="sm" onClick={handleSave}>
+                          <Save size={14} />
+                          保存
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setEditContent(selected.content)
+                          setEditing(true)
+                        }}
+                      >
+                        编辑
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
                 {editing ? (
-                  <>
-                    <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
-                      取消
-                    </Button>
-                    <Button size="sm" onClick={handleSave}>
-                      <Save size={14} />
-                      保存
-                    </Button>
-                  </>
+                  <textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    className="w-full h-[calc(100vh-16rem)] p-4 text-sm font-mono rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 resize-none"
+                  />
                 ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setEditContent(selected.content)
-                      setEditing(true)
-                    }}
-                  >
-                    编辑
-                  </Button>
+                  <MessageResponse>{selected.content}</MessageResponse>
                 )}
               </div>
-            </div>
-
-            {editing ? (
-              <textarea
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                className="w-full h-[calc(100vh-16rem)] p-4 text-sm font-mono rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 resize-none"
-              />
             ) : (
-              <MessageResponse>{selected.content}</MessageResponse>
+              <div className="flex items-center justify-center h-full text-zinc-400">
+                <div className="text-center">
+                  <Sparkles size={32} className="mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">选择一个技能查看详情</p>
+                </div>
+              </div>
             )}
           </div>
-        ) : (
-          <div className="flex items-center justify-center h-full text-zinc-400">
-            <div className="text-center">
-              <Sparkles size={32} className="mx-auto mb-2 opacity-30" />
-              <p className="text-sm">选择一个技能查看详情</p>
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Create dialog */}
       {showCreate && (

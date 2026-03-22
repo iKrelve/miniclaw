@@ -9,6 +9,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Message, MessageContent, MessageResponse } from '../ai-elements/message'
 import { ToolActionsGroup } from '../ai-elements/tool-actions-group'
 import { Shimmer } from '../ai-elements/shimmer'
+import { WidgetRenderer } from './WidgetRenderer'
+import { parseAllShowWidgets, computePartialWidgetKey } from '../../lib/widget-parser'
 import type { ToolUseInfo, ToolResultInfo } from '../../hooks/useSSEStream'
 
 // ---------------------------------------------------------------------------
@@ -123,6 +125,150 @@ interface StreamingMessageProps {
   onForceStop?: () => void
 }
 
+// ── Widget-aware streaming content renderer ────────────────────────────
+
+function renderStreamingContent(content: string, streaming: boolean) {
+  const hasWidgetFence = /```show-widget/.test(content)
+
+  if (hasWidgetFence && streaming) {
+    const lastFenceStart = content.lastIndexOf('```show-widget')
+    const afterLastFence = content.slice(lastFenceStart)
+    const lastFenceClosed = /```show-widget\s*\n?[\s\S]*?\n?\s*```/.test(afterLastFence)
+
+    if (lastFenceClosed) {
+      const allSegments = parseAllShowWidgets(content)
+      return (
+        <>
+          {allSegments.map((seg, i) =>
+            seg.type === 'text' ? (
+              <MessageResponse key={`t-${i}`}>{seg.content}</MessageResponse>
+            ) : (
+              <WidgetRenderer
+                key={`w-${i}`}
+                widgetCode={seg.data.widget_code}
+                isStreaming={false}
+                title={seg.data.title}
+              />
+            ),
+          )}
+        </>
+      )
+    }
+
+    // Last fence still open — render completed + partial
+    const beforePart = content.slice(0, lastFenceStart).trim()
+    const hasCompletedFences = beforePart.length > 0 && /```show-widget/.test(beforePart)
+    const completedSegments = hasCompletedFences ? parseAllShowWidgets(beforePart) : []
+
+    // Extract partial widget code
+    const fenceBody = content.slice(lastFenceStart + '```show-widget'.length).trim()
+    let partialCode: string | null = null
+    const keyIdx = fenceBody.indexOf('"widget_code"')
+    if (keyIdx !== -1) {
+      const colonIdx = fenceBody.indexOf(':', keyIdx + 13)
+      if (colonIdx !== -1) {
+        const quoteIdx = fenceBody.indexOf('"', colonIdx + 1)
+        if (quoteIdx !== -1) {
+          let raw = fenceBody.slice(quoteIdx + 1)
+          raw = raw.replace(/"\s*\}\s*$/, '')
+          if (raw.endsWith('\\')) raw = raw.slice(0, -1)
+          try {
+            partialCode = raw
+              .replace(/\\\\/g, '\x00BACKSLASH\x00')
+              .replace(/\\n/g, '\n')
+              .replace(/\\t/g, '\t')
+              .replace(/\\r/g, '\r')
+              .replace(/\\"/g, '"')
+              .replace(/\x00BACKSLASH\x00/g, '\\')
+          } catch {
+            partialCode = null
+          }
+        }
+      }
+    }
+
+    // Truncate unclosed <script>
+    let scriptsTruncated = false
+    if (partialCode) {
+      const lastScript = partialCode.lastIndexOf('<script')
+      if (lastScript !== -1) {
+        const afterScript = partialCode.slice(lastScript)
+        if (!/<script[\s\S]*?<\/script>/i.test(afterScript)) {
+          partialCode = partialCode.slice(0, lastScript).trim() || null
+          scriptsTruncated = true
+        }
+      }
+    }
+
+    let partialTitle: string | undefined
+    const titleMatch = fenceBody.match(/"title"\s*:\s*"([^"]*?)"/)
+    if (titleMatch) partialTitle = titleMatch[1]
+    const partialWidgetKey = computePartialWidgetKey(content)
+
+    return (
+      <>
+        {!hasCompletedFences && beforePart && (
+          <MessageResponse key="pre-text">{beforePart}</MessageResponse>
+        )}
+        {completedSegments.map((seg, i) =>
+          seg.type === 'text' ? (
+            <MessageResponse key={`t-${i}`}>{seg.content}</MessageResponse>
+          ) : (
+            <WidgetRenderer
+              key={`w-${i}`}
+              widgetCode={seg.data.widget_code}
+              isStreaming={false}
+              title={seg.data.title}
+            />
+          ),
+        )}
+        {partialCode && partialCode.length > 10 ? (
+          <WidgetRenderer
+            key={partialWidgetKey}
+            widgetCode={partialCode}
+            isStreaming
+            title={partialTitle}
+            showOverlay={scriptsTruncated}
+          />
+        ) : (
+          <Shimmer>加载 Widget...</Shimmer>
+        )}
+      </>
+    )
+  }
+
+  if (hasWidgetFence && !streaming) {
+    const widgetSegments = parseAllShowWidgets(content)
+    if (widgetSegments.length > 0) {
+      return (
+        <>
+          {widgetSegments.map((seg, i) =>
+            seg.type === 'text' ? (
+              <MessageResponse key={`t-${i}`}>{seg.content}</MessageResponse>
+            ) : (
+              <WidgetRenderer
+                key={`w-${i}`}
+                widgetCode={seg.data.widget_code}
+                isStreaming={false}
+                title={seg.data.title}
+              />
+            ),
+          )}
+        </>
+      )
+    }
+  }
+
+  // Strip partial widget fences during streaming
+  if (streaming) {
+    const stripped = content.replace(/```show-widget[\s\S]*$/, '').trim()
+    return stripped ? <MessageResponse>{stripped}</MessageResponse> : null
+  }
+
+  const stripped = content.replace(/```show-widget[\s\S]*?(```|$)/g, '').trim()
+  return stripped ? <MessageResponse>{stripped}</MessageResponse> : null
+}
+
 export function StreamingMessage({
   content,
   isStreaming,
@@ -174,8 +320,8 @@ export function StreamingMessage({
           />
         )}
 
-        {/* Streaming text content */}
-        {content && <MessageResponse>{content}</MessageResponse>}
+        {/* Streaming text content — with widget detection */}
+        {content && renderStreamingContent(content, isStreaming)}
 
         {/* Loading indicator when no content yet */}
         {isStreaming && !content && toolUses.length === 0 && (

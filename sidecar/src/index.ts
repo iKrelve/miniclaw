@@ -200,10 +200,12 @@ import settingsRoutes from './routes/settings'
 import providerRoutes from './routes/providers'
 import mcpRoutes from './routes/mcp'
 import skillsRoutes from './routes/skills'
+import marketplaceRoutes from './routes/marketplace'
 import taskRoutes from './routes/tasks'
 import workspaceRoutes from './routes/workspace'
 import terminalRoutes from './routes/terminal'
 import uploadRoutes from './routes/uploads'
+import browserRoutes from './routes/browser'
 import {
   attachSocket,
   detachSocket,
@@ -231,10 +233,12 @@ app.route('/settings', settingsRoutes)
 app.route('/providers', providerRoutes)
 app.route('/mcp', mcpRoutes)
 app.route('/skills', skillsRoutes)
+app.route('/marketplace', marketplaceRoutes)
 app.route('/tasks', taskRoutes)
 app.route('/workspace', workspaceRoutes)
 app.route('/terminal', terminalRoutes)
 app.route('/uploads', uploadRoutes)
+app.route('/browser', browserRoutes)
 
 async function main() {
   const port = await getAvailablePort()

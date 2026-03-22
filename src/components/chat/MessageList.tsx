@@ -6,7 +6,7 @@
  * MessageItem for persisted messages, and StreamingMessage for in-progress content.
  */
 
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useEffect, useMemo, useCallback } from 'react'
 import { useStickToBottomContext } from 'use-stick-to-bottom'
 import {
   Conversation,
@@ -61,6 +61,9 @@ interface MessageListProps {
   onForceStop?: () => void
   onPermissionAllow?: (id: string) => void
   onPermissionDeny?: (id: string) => void
+  hasMore?: boolean
+  loadingMore?: boolean
+  onLoadMore?: () => void
 }
 
 export function MessageList({
@@ -75,7 +78,31 @@ export function MessageList({
   onForceStop,
   onPermissionAllow,
   onPermissionDeny,
+  hasMore,
+  loadingMore,
+  onLoadMore,
 }: MessageListProps) {
+  // Scroll anchor: preserve position when older messages are prepended
+  const anchorIdRef = useRef<string | null>(null)
+  const prevMessageCountRef = useRef(messages.length)
+
+  const handleLoadMore = useCallback(() => {
+    if (messages.length > 0) {
+      anchorIdRef.current = messages[0].id
+    }
+    onLoadMore?.()
+  }, [messages, onLoadMore])
+
+  // After messages are prepended, scroll the anchor element back into view
+  useEffect(() => {
+    if (anchorIdRef.current && messages.length > prevMessageCountRef.current) {
+      const el = document.getElementById(`msg-${anchorIdRef.current}`)
+      if (el) el.scrollIntoView({ block: 'start' })
+      anchorIdRef.current = null
+    }
+    prevMessageCountRef.current = messages.length
+  }, [messages])
+
   // Extract permission requests from stream events
   const permissionRequests = useMemo(() => {
     const reqs: Array<{ id: string; tool_name: string; description: string; input: unknown }> = []
@@ -115,6 +142,19 @@ export function MessageList({
     <Conversation>
       <ScrollOnStream isStreaming={isStreaming} count={messages.length} />
       <ConversationContent className="mx-auto max-w-3xl px-4 py-6 gap-6">
+        {/* Load earlier messages button */}
+        {hasMore && (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-md hover:bg-muted"
+            >
+              {loadingMore ? '加载中...' : '加载更早的消息'}
+            </button>
+          </div>
+        )}
         {messages.map((msg) => (
           <div key={msg.id} id={`msg-${msg.id}`} className="group">
             <MessageItem message={msg} />

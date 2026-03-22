@@ -9,6 +9,9 @@ import { useState, useCallback, useRef, useEffect, useMemo, memo } from 'react'
 import { Copy, Check, CaretDown, CaretUp } from '@phosphor-icons/react'
 import { Message, MessageContent, MessageResponse } from '../ai-elements/message'
 import { ToolActionsGroup } from '../ai-elements/tool-actions-group'
+import { WidgetRenderer } from './WidgetRenderer'
+import { parseAllShowWidgets } from '../../lib/widget-parser'
+import { FileAttachmentDisplay } from './FileAttachmentDisplay'
 
 interface Message_ {
   id: string
@@ -137,6 +140,7 @@ interface TokenUsage {
   output_tokens?: number
   cache_read_input_tokens?: number
   cache_creation_input_tokens?: number
+  cost_usd?: number
 }
 
 function TokenUsageDisplay({ raw }: { raw: string }) {
@@ -145,12 +149,23 @@ function TokenUsageDisplay({ raw }: { raw: string }) {
     const input = usage.input_tokens ?? 0
     const output = usage.output_tokens ?? 0
     const cache = usage.cache_read_input_tokens ?? 0
+    const cost = usage.cost_usd
     if (input === 0 && output === 0) return null
-    const parts = [`${input} in`, `${output} out`]
-    if (cache > 0) parts.push(`${cache} cached`)
+
+    const total = input + output
+    const costStr = cost !== undefined && cost !== null ? ` · $${cost.toFixed(4)}` : ''
+
     return (
-      <span className="text-[10px] text-muted-foreground/50 tabular-nums" title="Token usage">
-        {parts.join(' · ')}
+      <span className="group/tokens relative cursor-default text-[10px] text-muted-foreground/50 tabular-nums">
+        <span>
+          {total.toLocaleString()} tokens{costStr}
+        </span>
+        {/* Hover tooltip with detailed breakdown */}
+        <span className="pointer-events-none absolute bottom-full left-0 mb-1.5 whitespace-nowrap rounded-md bg-popover px-2.5 py-1.5 text-[11px] text-popover-foreground shadow-md border border-border/50 opacity-0 group-hover/tokens:opacity-100 transition-opacity duration-150 z-50">
+          In: {input.toLocaleString()} · Out: {output.toLocaleString()}
+          {cache > 0 ? ` · Cache: ${cache.toLocaleString()}` : ''}
+          {costStr}
+        </span>
       </span>
     )
   } catch {
@@ -243,22 +258,7 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
         )}
 
         {/* File attachments for user messages */}
-        {isUser && files.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-1">
-            {files.map((f, i) => (
-              <span
-                key={f.id || i}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white/20 text-[11px] text-white/80"
-                title={f.name}
-              >
-                📎 {f.name}
-                {f.size != null && (
-                  <span className="text-white/50">({(f.size / 1024).toFixed(1)}KB)</span>
-                )}
-              </span>
-            ))}
-          </div>
-        )}
+        {isUser && files.length > 0 && <FileAttachmentDisplay files={files} />}
 
         {/* Text content */}
         {text &&
@@ -295,7 +295,7 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
               )}
             </div>
           ) : (
-            <MessageResponse>{text}</MessageResponse>
+            <AssistantTextContent text={text} />
           ))}
       </MessageContent>
 
@@ -311,4 +311,33 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
       </div>
     </Message>
   )
+})
+
+// ── AssistantTextContent — handles show-widget blocks ───────────────────
+
+const AssistantTextContent = memo(function AssistantTextContent({ text }: { text: string }) {
+  // Try show-widget first (Generative UI)
+  const widgetSegments = parseAllShowWidgets(text)
+  if (widgetSegments.length > 0) {
+    return (
+      <>
+        {widgetSegments.map((seg, i) =>
+          seg.type === 'text' ? (
+            <MessageResponse key={`t-${i}`}>{seg.content}</MessageResponse>
+          ) : (
+            <WidgetRenderer
+              key={`w-${i}`}
+              widgetCode={seg.data.widget_code}
+              isStreaming={false}
+              title={seg.data.title}
+            />
+          ),
+        )}
+      </>
+    )
+  }
+
+  // Strip any show-widget remnants
+  const stripped = text.replace(/```show-widget[\s\S]*?(```|$)/g, '').trim()
+  return stripped ? <MessageResponse>{stripped}</MessageResponse> : null
 })

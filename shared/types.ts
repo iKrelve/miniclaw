@@ -194,6 +194,35 @@ export interface SkillInfo {
 }
 
 // ==========================================
+// Skills Marketplace (skills.sh)
+// ==========================================
+
+export interface MarketplaceSkill {
+  id: string
+  skillId: string // e.g. "git-commit"
+  name: string
+  installs: number
+  source: string // e.g. "owner/repo"
+  isInstalled?: boolean
+  installedAt?: string
+}
+
+export interface SkillLockFile {
+  version: number
+  skills: Record<string, SkillLockEntry>
+}
+
+export interface SkillLockEntry {
+  source: string
+  sourceType: string
+  sourceUrl: string
+  skillPath?: string
+  skillFolderHash: string
+  installedAt: string
+  updatedAt: string
+}
+
+// ==========================================
 // API Request/Response
 // ==========================================
 

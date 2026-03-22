@@ -62,7 +62,8 @@ The application is a **three-process architecture**:
 │   ├── /plugins           # McpPanel (MCP server CRUD, dual-tab: list + JSON editor)
 │   ├── /settings          # SettingsView, ProviderSection, ProxySection, GeneralSection,
 │   │                        ThemeSelector, FieldRow, SettingsCard
-│   ├── /skills            # SkillsPanel (skill management: local/installed tabs, create/edit/delete)
+│   ├── /skills            # SkillsPanel (local/marketplace tabs), MarketplaceBrowser, MarketplaceSkillCard,
+│   │                        MarketplaceSkillDetail, InstallProgressDialog
 │   ├── /terminal          # TerminalPanel (xterm.js terminal)
 │   └── /ui                # Base UI components (button, dialog, toast)
 ├── /hooks
@@ -95,6 +96,7 @@ The application is a **three-process architecture**:
 │   │   ├── mcp.ts         # MCP server CRUD (add/edit/delete/toggle) + JSON config editor + status
 │   │   ├── tasks.ts       # CRUD for session tasks
 │   │   ├── skills.ts      # Multi-source skill scanning + YAML front matter + CRUD (create/edit/delete)
+│   │   ├── marketplace.ts # Skills marketplace (search skills.sh, install/remove via CLI, fetch SKILL.md from GitHub)
 │   │   ├── terminal.ts    # POST /terminal (create), POST /:id/resize, DELETE /:id (kill), GET /:id/ws (WebSocket)
 │   │   ├── uploads.ts     # File upload handling
 │   │   └── workspace.ts   # Workspace config files (soul.md, user.md, claude.md, memory.md)
@@ -232,6 +234,8 @@ Skills are reusable prompt templates discoverable via `/` slash commands. Two ki
 **Deduplication**: installed skills from `~/.agents/skills/` and `~/.claude/skills/` are content-hash deduplicated; preferred source is the one with more skills.
 
 **CRUD**: create (global/project slash commands), edit content, delete. Agent skills (SKILL.md) are read-only via the API.
+
+**Marketplace**: The SkillsPanel has a "技能市场" tab that searches [skills.sh](https://skills.sh) via `/marketplace/search`, displays SKILL.md from GitHub via `/marketplace/readme`, and installs/removes skills via `npx skills add/remove` with SSE progress streaming. Lock file at `~/.agents/.skill-lock.json` tracks installed marketplace skills.
 
 ### Slash Command Integration
 
@@ -504,58 +508,62 @@ API keys and sensitive settings are encrypted at rest in SQLite using AES-256-GC
 
 ## Sidecar API Reference
 
-| Method | Path                          | Purpose                                                |
-| ------ | ----------------------------- | ------------------------------------------------------ |
-| GET    | `/health`                     | Health check                                           |
-| POST   | `/chat`                       | Send message, receive SSE stream                       |
-| POST   | `/chat/interrupt`             | Interrupt active stream                                |
-| POST   | `/chat/permission`            | Respond to tool permission request                     |
-| POST   | `/terminal`                   | Create a new terminal session (accepts `cols`, `rows`) |
-| POST   | `/terminal/:id/resize`        | Resize terminal PTY (`cols`, `rows`)                   |
-| GET    | `/terminal/:id/ws`            | WebSocket for real-time terminal I/O                   |
-| DELETE | `/terminal/:id`               | Kill a terminal session                                |
-| POST   | `/uploads`                    | File upload handling                                   |
-| GET    | `/sessions`                   | List sessions                                          |
-| POST   | `/sessions`                   | Create session                                         |
-| GET    | `/sessions/:id`               | Get session                                            |
-| PUT    | `/sessions/:id`               | Update session                                         |
-| DELETE | `/sessions/:id`               | Delete session                                         |
-| GET    | `/sessions/:id/messages`      | Get messages for session                               |
-| GET    | `/providers`                  | List API providers                                     |
-| POST   | `/providers`                  | Create provider                                        |
-| PUT    | `/providers/:id`              | Update provider                                        |
-| DELETE | `/providers/:id`              | Delete provider                                        |
-| POST   | `/providers/:id/activate`     | Set as default provider                                |
-| GET    | `/settings`                   | Get all settings                                       |
-| PUT    | `/settings`                   | Bulk update settings                                   |
-| PUT    | `/settings/:key`              | Update single setting                                  |
-| GET    | `/files/browse?path=...`      | Browse directory tree                                  |
-| GET    | `/files/preview?path=...`     | Preview file content                                   |
-| GET    | `/git/status?cwd=...`         | Git status                                             |
-| GET    | `/git/log?cwd=...`            | Git log                                                |
-| GET    | `/git/branches?cwd=...`       | List branches                                          |
-| POST   | `/git/commit`                 | Stage and commit                                       |
-| POST   | `/git/checkout`               | Switch branch                                          |
-| GET    | `/mcp`                        | List MCP servers (merged config + source + status)     |
-| GET    | `/mcp/status`                 | MCP connection status                                  |
-| GET    | `/mcp/config`                 | Raw JSON config for editor                             |
-| PUT    | `/mcp/config`                 | Save entire JSON config                                |
-| POST   | `/mcp`                        | Add a new MCP server                                   |
-| PUT    | `/mcp/:name`                  | Update MCP server config                               |
-| DELETE | `/mcp/:name`                  | Remove MCP server                                      |
-| PUT    | `/mcp/:name/toggle`           | Enable/disable MCP server                              |
-| GET    | `/tasks?session_id=...`       | List tasks for session                                 |
-| POST   | `/tasks`                      | Create task                                            |
-| PUT    | `/tasks/:id`                  | Update task status                                     |
-| DELETE | `/tasks/:id`                  | Delete task                                            |
-| GET    | `/skills`                     | List all skills (multi-source, supports `?cwd=`)       |
-| GET    | `/skills/:name`               | Get skill content (supports `?source=` for installed)  |
-| POST   | `/skills`                     | Create slash command (name, content, scope)            |
-| PATCH  | `/skills/:name`               | Update skill content                                   |
-| DELETE | `/skills/:name`               | Delete slash command                                   |
-| GET    | `/workspace?path=...`         | Get workspace config status                            |
-| POST   | `/workspace/setup`            | Initialize workspace config files                      |
-| GET    | `/workspace/context?path=...` | Get workspace context for system prompt                |
+| Method | Path                          | Purpose                                                  |
+| ------ | ----------------------------- | -------------------------------------------------------- |
+| GET    | `/health`                     | Health check                                             |
+| POST   | `/chat`                       | Send message, receive SSE stream                         |
+| POST   | `/chat/interrupt`             | Interrupt active stream                                  |
+| POST   | `/chat/permission`            | Respond to tool permission request                       |
+| POST   | `/terminal`                   | Create a new terminal session (accepts `cols`, `rows`)   |
+| POST   | `/terminal/:id/resize`        | Resize terminal PTY (`cols`, `rows`)                     |
+| GET    | `/terminal/:id/ws`            | WebSocket for real-time terminal I/O                     |
+| DELETE | `/terminal/:id`               | Kill a terminal session                                  |
+| POST   | `/uploads`                    | File upload handling                                     |
+| GET    | `/sessions`                   | List sessions                                            |
+| POST   | `/sessions`                   | Create session                                           |
+| GET    | `/sessions/:id`               | Get session                                              |
+| PUT    | `/sessions/:id`               | Update session                                           |
+| DELETE | `/sessions/:id`               | Delete session                                           |
+| GET    | `/sessions/:id/messages`      | Get messages for session                                 |
+| GET    | `/providers`                  | List API providers                                       |
+| POST   | `/providers`                  | Create provider                                          |
+| PUT    | `/providers/:id`              | Update provider                                          |
+| DELETE | `/providers/:id`              | Delete provider                                          |
+| POST   | `/providers/:id/activate`     | Set as default provider                                  |
+| GET    | `/settings`                   | Get all settings                                         |
+| PUT    | `/settings`                   | Bulk update settings                                     |
+| PUT    | `/settings/:key`              | Update single setting                                    |
+| GET    | `/files/browse?path=...`      | Browse directory tree                                    |
+| GET    | `/files/preview?path=...`     | Preview file content                                     |
+| GET    | `/git/status?cwd=...`         | Git status                                               |
+| GET    | `/git/log?cwd=...`            | Git log                                                  |
+| GET    | `/git/branches?cwd=...`       | List branches                                            |
+| POST   | `/git/commit`                 | Stage and commit                                         |
+| POST   | `/git/checkout`               | Switch branch                                            |
+| GET    | `/mcp`                        | List MCP servers (merged config + source + status)       |
+| GET    | `/mcp/status`                 | MCP connection status                                    |
+| GET    | `/mcp/config`                 | Raw JSON config for editor                               |
+| PUT    | `/mcp/config`                 | Save entire JSON config                                  |
+| POST   | `/mcp`                        | Add a new MCP server                                     |
+| PUT    | `/mcp/:name`                  | Update MCP server config                                 |
+| DELETE | `/mcp/:name`                  | Remove MCP server                                        |
+| PUT    | `/mcp/:name/toggle`           | Enable/disable MCP server                                |
+| GET    | `/tasks?session_id=...`       | List tasks for session                                   |
+| POST   | `/tasks`                      | Create task                                              |
+| PUT    | `/tasks/:id`                  | Update task status                                       |
+| DELETE | `/tasks/:id`                  | Delete task                                              |
+| GET    | `/skills`                     | List all skills (multi-source, supports `?cwd=`)         |
+| GET    | `/skills/:name`               | Get skill content (supports `?source=` for installed)    |
+| POST   | `/skills`                     | Create slash command (name, content, scope)              |
+| PATCH  | `/skills/:name`               | Update skill content                                     |
+| DELETE | `/skills/:name`               | Delete slash command                                     |
+| GET    | `/marketplace/search`         | Search skills.sh marketplace (proxy, marks installed)    |
+| POST   | `/marketplace/install`        | Install skill via CLI (SSE progress stream)              |
+| POST   | `/marketplace/remove`         | Uninstall skill via CLI (SSE progress stream)            |
+| GET    | `/marketplace/readme`         | Fetch SKILL.md from GitHub (cached, `?source=&skillId=`) |
+| GET    | `/workspace?path=...`         | Get workspace config status                              |
+| POST   | `/workspace/setup`            | Initialize workspace config files                        |
+| GET    | `/workspace/context?path=...` | Get workspace context for system prompt                  |
 
 ## Tauri IPC Commands
 

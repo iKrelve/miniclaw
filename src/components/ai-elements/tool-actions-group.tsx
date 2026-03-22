@@ -18,6 +18,7 @@ import {
   CaretRight,
 } from '@phosphor-icons/react'
 import { cn } from '../../lib/utils'
+import { ToolCallBlock } from '../chat/ToolCallBlock'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -279,9 +280,15 @@ export function ToolActionsGroup({ tools, isStreaming = false }: ToolActionsGrou
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.12, ease: 'easeOut' }}
             >
-              <div className="ml-1.5 mt-0.5 border-l-2 border-border/50 pl-2">
+              <div className="ml-1.5 mt-0.5 space-y-0.5">
                 {tools.map((tool, i) => (
-                  <ToolActionRow key={tool.id || `tool-${i}`} tool={tool} />
+                  <ToolCallBlock
+                    key={tool.id || `tool-${i}`}
+                    name={tool.name}
+                    input={tool.input}
+                    result={tool.result}
+                    isError={tool.isError}
+                  />
                 ))}
               </div>
             </motion.div>
