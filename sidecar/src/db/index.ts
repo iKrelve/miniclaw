@@ -301,7 +301,7 @@ export function listProviders() {
 
 export function updateProvider(id: string, updates: Record<string, unknown>) {
   const fields: string[] = [];
-  const values: unknown[] = [];
+  const values: (string | number | boolean | null)[] = [];
   for (const [key, value] of Object.entries(updates)) {
     if (['name', 'api_key', 'base_url', 'is_active'].includes(key)) {
       fields.push(`${key} = ?`);
@@ -309,7 +309,7 @@ export function updateProvider(id: string, updates: Record<string, unknown>) {
       if (key === 'api_key' && typeof value === 'string') {
         values.push(encrypt(value));
       } else {
-        values.push(value);
+        values.push(value as string | number | boolean | null);
       }
     }
   }

@@ -22,6 +22,7 @@ import type {
   McpServerConfig as SdkMcpServerConfig,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerConfig, TokenUsage, PermissionRequestEvent } from '../../../shared/types';
+import type { PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import { getSetting, getProvider, updateSdkSessionId } from '../db';
 import { findClaudeBinary, getExpandedPath } from './platform';
 import { logger } from '../utils/logger';
@@ -152,17 +153,23 @@ export interface StreamChatOptions {
 // ==========================================
 
 interface PendingPermission {
-  resolve: (result: { behavior: 'allow' | 'deny'; updatedInput?: unknown }) => void;
+  resolve: (result: PermissionResult) => void;
 }
 
 const pendingPermissions = new Map<string, PendingPermission>();
 
 export function resolvePermission(permissionId: string, allow: boolean, updatedInput?: unknown) {
   const pending = pendingPermissions.get(permissionId);
-  if (pending) {
-    pending.resolve({ behavior: allow ? 'allow' : 'deny', updatedInput });
-    pendingPermissions.delete(permissionId);
+  if (!pending) return;
+  if (allow) {
+    pending.resolve({
+      behavior: 'allow',
+      updatedInput: updatedInput as Record<string, unknown> | undefined,
+    });
+  } else {
+    pending.resolve({ behavior: 'deny', message: 'User denied permission' });
   }
+  pendingPermissions.delete(permissionId);
 }
 
 // ==========================================
@@ -314,13 +321,13 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
           }));
 
           // Wait for user response
-          return new Promise((resolve) => {
+          return new Promise<PermissionResult>((resolve) => {
             pendingPermissions.set(permId, { resolve });
             // Auto-timeout after 5 minutes
             setTimeout(() => {
               if (pendingPermissions.has(permId)) {
                 pendingPermissions.delete(permId);
-                resolve({ behavior: 'deny' });
+                resolve({ behavior: 'deny', message: 'Permission request timed out' });
               }
             }, 5 * 60 * 1000);
           });

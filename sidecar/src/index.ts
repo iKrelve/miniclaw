@@ -172,7 +172,7 @@ async function main() {
   // This MUST be on stdout — Tauri's sidecar manager parses it
   console.log(`READY:${port}`);
 
-  Bun.serve({
+  Bun.serve<{ terminalId: string }>({
     fetch(req, server) {
       // Handle WebSocket upgrade for terminal I/O
       const url = new URL(req.url);
