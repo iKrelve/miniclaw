@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "bun run build:sidecar && tauri dev",
     "dev:web": "vite",
     "dev:sidecar": "cd sidecar && bun run dev",
     "build": "bun run build:sidecar && tauri build",
@@ -12,6 +12,7 @@
     "build:sidecar": "cd sidecar && bun run build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "typecheck": "tsc --noEmit",
     "postinstall": "cd sidecar && bun install",
     "setup": "bun install && bun run build:sidecar"
   },
