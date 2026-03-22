@@ -7,6 +7,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { logger } from '../utils/logger';
 
 export const isWindows = process.platform === 'win32';
 export const isMac = process.platform === 'darwin';
@@ -61,6 +62,7 @@ export function findClaudeBinary(): string | undefined {
       try {
         if (fs.existsSync(full)) {
           cachedClaudePath = full;
+          logger.info('platform', 'Found claude binary', { path: full });
           return full;
         }
       } catch {
@@ -88,5 +90,6 @@ export function findClaudeBinary(): string | undefined {
   }
 
   cachedClaudePath = null;
+  logger.warn('platform', 'Claude binary not found in any location');
   return undefined;
 }

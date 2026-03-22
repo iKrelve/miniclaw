@@ -10,6 +10,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import crypto from 'crypto';
+import { logger } from '../utils/logger';
 
 const DATA_DIR = process.env.MINICLAW_DATA_DIR || path.join(os.homedir(), '.miniclaw');
 const DB_PATH = path.join(DATA_DIR, 'miniclaw.db');
@@ -21,15 +22,28 @@ export function getDb(): Database {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
+    logger.info('db', 'Opening database', { path: DB_PATH });
     db = new Database(DB_PATH);
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('PRAGMA foreign_keys = ON');
     initSchema(db);
+    logger.info('db', 'Database initialized');
   }
   return db;
 }
 
 function initSchema(db: Database): void {
+  // Reset stale locks from previous sidecar run (any 'running' session is orphaned)
+  try {
+    const stale = db.prepare("SELECT id FROM chat_sessions WHERE runtime_status = 'running'").all() as { id: string }[];
+    if (stale.length > 0) {
+      db.prepare("UPDATE chat_sessions SET runtime_status = 'idle' WHERE runtime_status = 'running'").run();
+      logger.warn('db', 'Reset stale session locks on startup', { count: stale.length, ids: stale.map(s => s.id) });
+    }
+  } catch {
+    // Table may not exist yet on first run — that's fine, CREATE TABLE below will handle it
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS chat_sessions (
       id TEXT PRIMARY KEY,
@@ -322,10 +336,19 @@ export function acquireSessionLock(sessionId: string): boolean {
       "UPDATE chat_sessions SET runtime_status = 'running', updated_at = datetime('now') WHERE id = ? AND runtime_status = 'idle'"
     )
     .run(sessionId);
-  return result.changes > 0;
+  const acquired = result.changes > 0;
+  if (!acquired) {
+    // Check why lock wasn't acquired
+    const session = getDb().prepare('SELECT runtime_status, updated_at FROM chat_sessions WHERE id = ?').get(sessionId) as { runtime_status: string; updated_at: string } | undefined;
+    logger.warn('db', 'Failed to acquire session lock', { sessionId, currentStatus: session?.runtime_status, updatedAt: session?.updated_at });
+  } else {
+    logger.info('db', 'Session lock acquired', { sessionId });
+  }
+  return acquired;
 }
 
 export function releaseSessionLock(sessionId: string) {
+  logger.info('db', 'Session lock released', { sessionId });
   setSessionRuntimeStatus(sessionId, 'idle');
 }
 

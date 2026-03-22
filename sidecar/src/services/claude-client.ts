@@ -24,6 +24,7 @@ import type {
 import type { McpServerConfig, TokenUsage, PermissionRequestEvent } from '../../../shared/types';
 import { getSetting, getProvider, updateSdkSessionId } from '../db';
 import { findClaudeBinary, getExpandedPath } from './platform';
+import { logger } from '../utils/logger';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
@@ -190,6 +191,13 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
       const abortController = new AbortController();
       activeConversations.set(sessionId, { abort: abortController });
 
+      // Expand ~ to home directory (Node/Bun child_process doesn't do shell expansion)
+      const resolvedCwd = workingDirectory.startsWith('~')
+        ? workingDirectory.replace(/^~/, os.homedir())
+        : workingDirectory;
+
+      logger.info('claude', 'streamChat.start', { sessionId, prompt: prompt.slice(0, 100), model, hasSystemPrompt: !!systemPrompt, workingDirectory, resolvedCwd });
+
       try {
         // Build environment
         const sdkEnv: Record<string, string> = { ...(process.env as Record<string, string>) };
@@ -215,11 +223,41 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
         if (settingsCustomHeaders && !sdkEnv.ANTHROPIC_CUSTOM_HEADERS) sdkEnv.ANTHROPIC_CUSTOM_HEADERS = settingsCustomHeaders;
         if (settingsModel && !model && !sdkEnv.ANTHROPIC_MODEL) sdkEnv.ANTHROPIC_MODEL = settingsModel;
 
+        // Override X-Working-Dir in custom headers with actual resolved cwd
+        // (the proxy refresher may have captured a stale temp dir path)
+        if (sdkEnv.ANTHROPIC_CUSTOM_HEADERS || sdkEnv.ANTHROPIC_BASE_URL) {
+          const effectiveCwd = resolvedCwd || os.homedir();
+          const existing = sdkEnv.ANTHROPIC_CUSTOM_HEADERS || '';
+          // Replace existing X-Working-Dir or append if not present
+          if (existing.includes('X-Working-Dir:')) {
+            sdkEnv.ANTHROPIC_CUSTOM_HEADERS = existing.replace(/X-Working-Dir:\s*[^\n,;]*/, `X-Working-Dir: ${effectiveCwd}`);
+          } else if (existing.includes('X-Branch:')) {
+            // X-Branch is also a proxy header — replace with X-Working-Dir
+            sdkEnv.ANTHROPIC_CUSTOM_HEADERS = existing.replace(/X-Branch:\s*[^\n,;]*/, `X-Working-Dir: ${effectiveCwd}`);
+          } else if (existing) {
+            sdkEnv.ANTHROPIC_CUSTOM_HEADERS = `${existing}, X-Working-Dir: ${effectiveCwd}`;
+          } else {
+            sdkEnv.ANTHROPIC_CUSTOM_HEADERS = `X-Working-Dir: ${effectiveCwd}`;
+          }
+        }
+
+        // Log resolved env vars (mask sensitive values)
+        logger.info('claude', 'SDK environment resolved', {
+          sessionId,
+          hasBaseUrl: !!sdkEnv.ANTHROPIC_BASE_URL,
+          baseUrl: sdkEnv.ANTHROPIC_BASE_URL || '(not set)',
+          hasAuthToken: !!sdkEnv.ANTHROPIC_AUTH_TOKEN,
+          authTokenPrefix: sdkEnv.ANTHROPIC_AUTH_TOKEN ? sdkEnv.ANTHROPIC_AUTH_TOKEN.slice(0, 8) + '...' : '(not set)',
+          hasCustomHeaders: !!sdkEnv.ANTHROPIC_CUSTOM_HEADERS,
+          customHeaders: sdkEnv.ANTHROPIC_CUSTOM_HEADERS || '(not set)',
+          hasModel: !!sdkEnv.ANTHROPIC_MODEL,
+        });
+
         // Check if bypass permissions
         const globalSkip = getSetting('dangerously_skip_permissions') === 'true';
 
         const queryOptions: Options = {
-          cwd: workingDirectory || os.homedir(),
+          cwd: resolvedCwd || os.homedir(),
           abortController,
           includePartialMessages: true,
           permissionMode: globalSkip
@@ -234,6 +272,7 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
 
         // Find claude binary
         const claudePath = findClaudeBinary();
+        logger.info('claude', 'Claude binary resolution', { sessionId, claudePath: claudePath || '(not found — SDK will use default)' });
         if (claudePath) {
           queryOptions.pathToClaudeCodeExecutable = claudePath;
         }
@@ -302,12 +341,28 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
         };
 
         // Start conversation
+        logger.info('claude', 'Calling SDK query()', {
+          sessionId,
+          model: queryOptions.model || '(default)',
+          cwd: queryOptions.cwd,
+          permissionMode: queryOptions.permissionMode,
+          hasResume: !!queryOptions.resume,
+          mcpServerCount: queryOptions.mcpServers ? Object.keys(queryOptions.mcpServers).length : 0,
+        });
+
         const conversation = query({ prompt, options: queryOptions });
 
         let tokenUsage: TokenUsage | null = null;
+        let messageCount = 0;
 
         for await (const message of conversation) {
+          messageCount++;
           if (abortController.signal.aborted) break;
+
+          // Log first few messages and then periodically
+          if (messageCount <= 5 || messageCount % 20 === 0) {
+            logger.debug('claude', 'SDK message received', { sessionId, type: message.type, messageCount });
+          }
 
           switch (message.type) {
             case 'assistant': {
@@ -426,20 +481,23 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
           }
         }
 
+        logger.info('claude', 'Stream completed normally', { sessionId, totalMessages: messageCount });
         controller.enqueue(formatSSE({ type: 'done', data: '' }));
         controller.close();
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Unknown error';
-        console.error('[claude-client] Stream error:', msg);
+        const stack = error instanceof Error ? error.stack : undefined;
+        logger.error('claude', 'Stream error caught', { sessionId, error: msg, stack, errorType: error?.constructor?.name });
         try {
           controller.enqueue(formatSSE({ type: 'error', data: msg }));
           controller.enqueue(formatSSE({ type: 'done', data: '' }));
           controller.close();
-        } catch {
-          // controller may already be closed
+        } catch (closeErr) {
+          logger.warn('claude', 'Failed to close controller after error', { sessionId, closeError: String(closeErr) });
         }
       } finally {
         activeConversations.delete(sessionId);
+        logger.info('claude', 'Stream cleanup done', { sessionId });
       }
     },
   });

@@ -106,14 +106,25 @@ if (existingVars.PROXY_CLI_COMMAND) {
 }
 
 // Load (possibly refreshed) .env.local into process.env
-for (const [key, value] of Object.entries(loadEnvFile(envLocalPath))) {
+const loadedVars = loadEnvFile(envLocalPath);
+for (const [key, value] of Object.entries(loadedVars)) {
   if (key === 'PROXY_CLI_COMMAND') continue; // meta key, not an env var
   if (!process.env[key]) process.env[key] = value;
 }
 
+// Log loaded env (after imports so logger module is initialized)
+logger.info('startup', 'Loaded .env.local', {
+  path: envLocalPath,
+  keys: Object.keys(loadedVars).filter(k => k !== 'PROXY_CLI_COMMAND'),
+  hasBaseUrl: !!loadedVars.ANTHROPIC_BASE_URL,
+  hasAuthToken: !!loadedVars.ANTHROPIC_AUTH_TOKEN,
+  hasCustomHeaders: !!loadedVars.ANTHROPIC_CUSTOM_HEADERS,
+});
+
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { getAvailablePort } from './utils/port';
+import { logger } from './utils/logger';
 import chatRoutes from './routes/chat';
 import sessionRoutes from './routes/sessions';
 import fileRoutes from './routes/files';
@@ -154,6 +165,8 @@ app.route('/uploads', uploadRoutes);
 
 async function main() {
   const port = await getAvailablePort();
+
+  logger.info('startup', 'Sidecar starting', { port, pid: process.pid });
 
   // Signal to Tauri that the server is ready with the port number
   // This MUST be on stdout — Tauri's sidecar manager parses it
@@ -198,7 +211,8 @@ async function main() {
     hostname: '127.0.0.1',
   });
 
-  // Log to stderr so it doesn't interfere with Tauri's READY parsing
+  logger.info('startup', `小龙虾 server running on http://127.0.0.1:${port}`);
+  // Also print to stderr for dev console
   console.error(`[sidecar] 小龙虾 server running on http://127.0.0.1:${port}`);
 }
 

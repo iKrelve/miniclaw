@@ -15,6 +15,7 @@ import {
   getSetting,
 } from '../db';
 import { loadMcpServers } from '../services/mcp-manager';
+import { logger } from '../utils/logger';
 
 const chatRoutes = new Hono();
 
@@ -25,18 +26,23 @@ chatRoutes.post('/', async (c) => {
   const body = await c.req.json();
   const { session_id, content, model, mode, provider_id, files } = body;
 
+  logger.info('chat', 'POST /chat request', { session_id, contentLen: content?.length, model, mode, provider_id });
+
   if (!session_id || !content) {
+    logger.warn('chat', 'Missing required fields', { session_id, hasContent: !!content });
     return c.json({ error: 'session_id and content are required' }, 400);
   }
 
   const session = getSession(session_id);
   if (!session) {
+    logger.warn('chat', 'Session not found', { session_id });
     return c.json({ error: 'Session not found' }, 404);
   }
 
   // Acquire session lock (atomic CAS — prevents concurrent requests)
   const lockAcquired = acquireSessionLock(session_id);
   if (!lockAcquired) {
+    logger.warn('chat', 'Session busy — lock not acquired', { session_id });
     return c.json({ error: 'Session is busy', code: 'SESSION_BUSY' }, 409);
   }
 
@@ -62,6 +68,15 @@ chatRoutes.post('/', async (c) => {
     // Build system prompt from workspace config (if any)
     let systemPrompt = (session.system_prompt as string) || undefined;
 
+    logger.info('chat', 'Creating SSE stream', {
+      session_id,
+      effectiveModel,
+      hasSdkSessionId: !!(session.sdk_session_id as string),
+      workingDirectory: (session.working_directory as string) || process.cwd(),
+      mcpServerCount: mcpServers ? Object.keys(mcpServers).length : 0,
+      mode: (mode || session.mode),
+    });
+
     // Create the SSE stream
     const stream = streamChat({
       prompt: content,
@@ -81,11 +96,15 @@ chatRoutes.post('/', async (c) => {
     let assistantText = '';
     const transformedStream = new ReadableStream<string>({
       async start(controller) {
+        logger.info('chat', 'transformedStream.start — begin reading inner stream', { session_id });
         const reader = stream.getReader();
         try {
           while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
+            if (done) {
+              logger.info('chat', 'Inner stream done', { session_id, assistantTextLen: assistantText.length });
+              break;
+            }
             controller.enqueue(value);
 
             // Parse SSE to collect text for persistence
@@ -94,6 +113,8 @@ chatRoutes.post('/', async (c) => {
                 const eventData = JSON.parse(value.slice(6).trim());
                 if (eventData.type === 'text' && typeof eventData.data === 'string') {
                   assistantText += eventData.data;
+                } else if (eventData.type === 'error') {
+                  logger.error('chat', 'SSE error event from inner stream', { session_id, error: eventData.data });
                 }
               } catch {
                 // ignore parse errors
@@ -102,7 +123,13 @@ chatRoutes.post('/', async (c) => {
           }
           controller.close();
         } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          logger.error('chat', 'transformedStream read error', { session_id, error: errMsg, stack: err instanceof Error ? err.stack : undefined });
+          // Ensure lock is released even on error
+          releaseSessionLock(session_id);
+          setSessionRuntimeStatus(session_id, 'idle');
           controller.error(err);
+          return; // skip finally double-release
         } finally {
           // Persist assistant message
           if (assistantText) {
@@ -110,6 +137,7 @@ chatRoutes.post('/', async (c) => {
           }
           releaseSessionLock(session_id);
           setSessionRuntimeStatus(session_id, 'idle');
+          logger.info('chat', 'transformedStream.finally — lock released', { session_id });
         }
       },
     });
@@ -124,9 +152,10 @@ chatRoutes.post('/', async (c) => {
       },
     });
   } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Failed to start chat';
+    logger.error('chat', 'Outer catch — releasing lock', { session_id, error: msg, stack: error instanceof Error ? error.stack : undefined });
     releaseSessionLock(session_id);
     setSessionRuntimeStatus(session_id, 'idle');
-    const msg = error instanceof Error ? error.message : 'Failed to start chat';
     return c.json({ error: msg }, 500);
   }
 });
