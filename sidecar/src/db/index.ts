@@ -1,0 +1,341 @@
+/**
+ * 小龙虾 (MiniClaw) — SQLite Database Module
+ *
+ * Migrated and simplified from CodePilot's src/lib/db.ts.
+ * Uses better-sqlite3 with WAL mode for concurrent reads.
+ * Data directory: ~/.miniclaw/miniclaw.db
+ */
+
+import Database from 'better-sqlite3';
+import path from 'path';
+import fs from 'fs';
+import os from 'os';
+import crypto from 'crypto';
+
+const DATA_DIR = process.env.MINICLAW_DATA_DIR || path.join(os.homedir(), '.miniclaw');
+const DB_PATH = path.join(DATA_DIR, 'miniclaw.db');
+
+let db: Database.Database | null = null;
+
+export function getDb(): Database.Database {
+  if (!db) {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    initSchema(db);
+  }
+  return db;
+}
+
+function initSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT 'New Chat',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      model TEXT NOT NULL DEFAULT '',
+      system_prompt TEXT NOT NULL DEFAULT '',
+      working_directory TEXT NOT NULL DEFAULT '',
+      sdk_session_id TEXT NOT NULL DEFAULT '',
+      project_name TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      mode TEXT DEFAULT 'code',
+      provider_name TEXT NOT NULL DEFAULT '',
+      provider_id TEXT NOT NULL DEFAULT '',
+      sdk_cwd TEXT NOT NULL DEFAULT '',
+      runtime_status TEXT NOT NULL DEFAULT 'idle',
+      permission_profile TEXT DEFAULT 'default'
+    );
+
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+      content TEXT NOT NULL,
+      token_usage TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      session_id TEXT REFERENCES chat_sessions(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS api_providers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      api_key TEXT NOT NULL DEFAULT '',
+      base_url TEXT NOT NULL DEFAULT '',
+      is_active INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+}
+
+function genId(): string {
+  return crypto.randomUUID();
+}
+
+// ==========================================
+// Sessions
+// ==========================================
+
+export function createSession(opts: {
+  title?: string;
+  working_directory: string;
+  model?: string;
+  mode?: string;
+  provider_id?: string;
+}) {
+  const d = getDb();
+  const id = genId();
+  d.prepare(`
+    INSERT INTO chat_sessions (id, title, working_directory, model, mode, provider_id)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    opts.title || 'New Chat',
+    opts.working_directory,
+    opts.model || '',
+    opts.mode || 'code',
+    opts.provider_id || ''
+  );
+  return getSession(id)!;
+}
+
+export function getSession(id: string) {
+  return getDb()
+    .prepare('SELECT * FROM chat_sessions WHERE id = ?')
+    .get(id) as Record<string, unknown> | undefined;
+}
+
+export function listSessions(status = 'active') {
+  return getDb()
+    .prepare('SELECT * FROM chat_sessions WHERE status = ? ORDER BY updated_at DESC')
+    .all(status) as Record<string, unknown>[];
+}
+
+export function updateSessionTitle(id: string, title: string) {
+  getDb()
+    .prepare("UPDATE chat_sessions SET title = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(title, id);
+}
+
+export function updateSessionModel(id: string, model: string) {
+  getDb()
+    .prepare("UPDATE chat_sessions SET model = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(model, id);
+}
+
+export function updateSessionProvider(id: string, providerName: string) {
+  getDb()
+    .prepare("UPDATE chat_sessions SET provider_name = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(providerName, id);
+}
+
+export function updateSdkSessionId(sessionId: string, sdkSessionId: string) {
+  getDb()
+    .prepare("UPDATE chat_sessions SET sdk_session_id = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(sdkSessionId, sessionId);
+}
+
+export function setSessionRuntimeStatus(id: string, status: string) {
+  getDb()
+    .prepare("UPDATE chat_sessions SET runtime_status = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(status, id);
+}
+
+export function deleteSession(id: string) {
+  getDb().prepare('DELETE FROM chat_sessions WHERE id = ?').run(id);
+}
+
+export function archiveSession(id: string) {
+  getDb()
+    .prepare("UPDATE chat_sessions SET status = 'archived', updated_at = datetime('now') WHERE id = ?")
+    .run(id);
+}
+
+// ==========================================
+// Messages
+// ==========================================
+
+export function addMessage(sessionId: string, role: string, content: string, tokenUsage?: string | null) {
+  const d = getDb();
+  const id = genId();
+  d.prepare(`
+    INSERT INTO messages (id, session_id, role, content, token_usage)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(id, sessionId, role, content, tokenUsage ?? null);
+
+  // Touch session updated_at
+  d.prepare("UPDATE chat_sessions SET updated_at = datetime('now') WHERE id = ?").run(sessionId);
+
+  return { id, session_id: sessionId, role, content, token_usage: tokenUsage ?? null };
+}
+
+export function getMessages(sessionId: string) {
+  return getDb()
+    .prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC')
+    .all(sessionId) as Record<string, unknown>[];
+}
+
+export function updateMessageContent(messageId: string, content: string) {
+  const result = getDb()
+    .prepare('UPDATE messages SET content = ? WHERE id = ?')
+    .run(content, messageId);
+  return result.changes;
+}
+
+// ==========================================
+// Settings
+// ==========================================
+
+export function getSetting(key: string): string | undefined {
+  const row = getDb()
+    .prepare('SELECT value FROM settings WHERE key = ?')
+    .get(key) as { value: string } | undefined;
+  return row?.value;
+}
+
+export function setSetting(key: string, value: string) {
+  getDb()
+    .prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
+    .run(key, value);
+}
+
+export function getAllSettings(): Record<string, string> {
+  const rows = getDb()
+    .prepare('SELECT key, value FROM settings')
+    .all() as { key: string; value: string }[];
+  const result: Record<string, string> = {};
+  for (const row of rows) {
+    result[row.key] = row.value;
+  }
+  return result;
+}
+
+// ==========================================
+// API Providers
+// ==========================================
+
+export function createProvider(opts: {
+  name: string;
+  type: string;
+  api_key: string;
+  base_url?: string;
+}) {
+  const id = genId();
+  getDb()
+    .prepare('INSERT INTO api_providers (id, name, type, api_key, base_url) VALUES (?, ?, ?, ?, ?)')
+    .run(id, opts.name, opts.type, opts.api_key, opts.base_url || '');
+  return getProvider(id)!;
+}
+
+export function getProvider(id: string) {
+  return getDb()
+    .prepare('SELECT * FROM api_providers WHERE id = ?')
+    .get(id) as Record<string, unknown> | undefined;
+}
+
+export function listProviders() {
+  return getDb()
+    .prepare('SELECT * FROM api_providers ORDER BY created_at DESC')
+    .all() as Record<string, unknown>[];
+}
+
+export function updateProvider(id: string, updates: Record<string, unknown>) {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  for (const [key, value] of Object.entries(updates)) {
+    if (['name', 'api_key', 'base_url', 'is_active'].includes(key)) {
+      fields.push(`${key} = ?`);
+      values.push(value);
+    }
+  }
+  if (fields.length === 0) return;
+  values.push(id);
+  getDb()
+    .prepare(`UPDATE api_providers SET ${fields.join(', ')} WHERE id = ?`)
+    .run(...values);
+}
+
+export function deleteProvider(id: string) {
+  getDb().prepare('DELETE FROM api_providers WHERE id = ?').run(id);
+}
+
+export function activateProvider(id: string) {
+  const d = getDb();
+  d.prepare('UPDATE api_providers SET is_active = 0').run();
+  d.prepare('UPDATE api_providers SET is_active = 1 WHERE id = ?').run(id);
+}
+
+// ==========================================
+// Tasks
+// ==========================================
+
+export function createTask(sessionId: string, content: string) {
+  const id = genId();
+  getDb()
+    .prepare('INSERT INTO tasks (id, session_id, content) VALUES (?, ?, ?)')
+    .run(id, sessionId, content);
+  return { id, session_id: sessionId, content, status: 'pending' };
+}
+
+export function getTasks(sessionId: string) {
+  return getDb()
+    .prepare('SELECT * FROM tasks WHERE session_id = ? ORDER BY created_at ASC')
+    .all(sessionId) as Record<string, unknown>[];
+}
+
+export function updateTaskStatus(id: string, status: string) {
+  getDb()
+    .prepare("UPDATE tasks SET status = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(status, id);
+}
+
+export function deleteTask(id: string) {
+  getDb().prepare('DELETE FROM tasks WHERE id = ?').run(id);
+}
+
+// ==========================================
+// Session Lock (prevent concurrent requests)
+// ==========================================
+
+export function acquireSessionLock(sessionId: string, lockId: string, owner: string, ttlSeconds: number): boolean {
+  // Simple lock via runtime_status field
+  const session = getSession(sessionId);
+  if (!session) return false;
+  if (session.runtime_status === 'running') return false;
+  setSessionRuntimeStatus(sessionId, 'running');
+  return true;
+}
+
+export function releaseSessionLock(sessionId: string) {
+  setSessionRuntimeStatus(sessionId, 'idle');
+}
+
+// ==========================================
+// Cleanup
+// ==========================================
+
+export function closeDb() {
+  if (db) {
+    db.close();
+    db = null;
+  }
+}
