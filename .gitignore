@@ -15,6 +15,11 @@ dist
 dist-ssr
 *.local
 
+# Tauri build / packaging output
+src-tauri/target/
+src-tauri/gen/schemas
+release/
+
 # Sidecar
 sidecar/node_modules
 sidecar/dist

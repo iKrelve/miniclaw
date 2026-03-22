@@ -1,9 +1,9 @@
 /**
- * Sidebar — Session list and navigation
+ * Sidebar — Session list with search, navigation, and context menu.
  */
 
-import { useEffect, useCallback } from 'react';
-import { Plus, MessageSquare, Settings, FolderGit2, Puzzle, Sparkles, Terminal } from 'lucide-react';
+import { useEffect, useCallback, useState } from 'react';
+import { Plus, MessageSquare, Settings, FolderGit2, Puzzle, Sparkles, Terminal, FolderOpen, Search, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAppStore } from '../../stores';
 import { useSidecar } from '../../hooks/useSidecar';
@@ -15,7 +15,9 @@ interface SidebarProps {
 
 export function Sidebar({ onNavigate, currentView }: SidebarProps) {
   const { baseUrl } = useSidecar();
-  const { sessions, activeSessionId, setSessions, setActiveSession, addSession } = useAppStore();
+  const { sessions, activeSessionId, setSessions, setActiveSession, addSession, removeSession } = useAppStore();
+  const [search, setSearch] = useState('');
+  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
   // Load sessions on mount
   useEffect(() => {
@@ -32,9 +34,7 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
       const res = await fetch(`${baseUrl}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          working_directory: '~',
-        }),
+        body: JSON.stringify({ working_directory: '~' }),
       });
       const data = await res.json();
       if (data.session) {
@@ -47,14 +47,43 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
     }
   }, [baseUrl, addSession, setActiveSession, onNavigate]);
 
+  const handleDeleteSession = useCallback(async (id: string) => {
+    if (!baseUrl) return;
+    try {
+      await fetch(`${baseUrl}/sessions/${id}`, { method: 'DELETE' });
+      removeSession(id);
+      setContextMenu(null);
+    } catch {
+      // error
+    }
+  }, [baseUrl, removeSession]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    setContextMenu({ id, x: e.clientX, y: e.clientY });
+  }, []);
+
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = () => setContextMenu(null);
+    window.addEventListener('click', handler);
+    return () => window.removeEventListener('click', handler);
+  }, [contextMenu]);
+
   const navItems = [
     { id: 'chat', icon: MessageSquare, label: '对话' },
-    { id: 'files', icon: FolderGit2, label: '文件' },
+    { id: 'files', icon: FolderOpen, label: '文件' },
+    { id: 'git', icon: FolderGit2, label: 'Git' },
     { id: 'plugins', icon: Puzzle, label: '插件' },
     { id: 'skills', icon: Sparkles, label: '技能' },
     { id: 'terminal', icon: Terminal, label: '终端' },
     { id: 'settings', icon: Settings, label: '设置' },
   ];
+
+  const filteredSessions = sessions.filter(
+    (s) => !search || s.title.toLowerCase().includes(search.toLowerCase()),
+  );
 
   return (
     <div className="w-64 flex flex-col bg-zinc-50 dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800">
@@ -64,11 +93,7 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
           <span className="text-xl">🦞</span>
           <span className="font-semibold text-zinc-800 dark:text-zinc-200">小龙虾</span>
         </div>
-        <button
-          onClick={handleNewChat}
-          className="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
-          title="新对话"
-        >
+        <button onClick={handleNewChat} className="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors" title="新对话">
           <Plus size={18} className="text-zinc-600 dark:text-zinc-400" />
         </button>
       </div>
@@ -92,18 +117,30 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
         ))}
       </div>
 
+      {/* Session search */}
+      <div className="px-3 pt-2">
+        <div className="relative">
+          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="搜索会话..."
+            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 placeholder:text-zinc-400"
+          />
+        </div>
+      </div>
+
       {/* Session list */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
         <div className="text-xs font-medium text-zinc-400 dark:text-zinc-500 px-3 py-1 uppercase">
-          会话
+          会话 ({filteredSessions.length})
         </div>
-        {sessions.map((session) => (
+        {filteredSessions.map((session) => (
           <button
             key={session.id}
-            onClick={() => {
-              setActiveSession(session.id);
-              onNavigate('chat');
-            }}
+            onClick={() => { setActiveSession(session.id); onNavigate('chat'); }}
+            onContextMenu={(e) => handleContextMenu(e, session.id)}
             className={cn(
               'w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors',
               activeSessionId === session.id
@@ -114,10 +151,26 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
             {session.title}
           </button>
         ))}
-        {sessions.length === 0 && (
-          <p className="text-xs text-zinc-400 px-3 py-2">暂无会话</p>
+        {filteredSessions.length === 0 && (
+          <p className="text-xs text-zinc-400 px-3 py-2">{search ? '未找到匹配' : '暂无会话'}</p>
         )}
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-lg py-1 min-w-[140px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            onClick={() => handleDeleteSession(contextMenu.id)}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+          >
+            <Trash2 size={14} />
+            删除会话
+          </button>
+        </div>
+      )}
     </div>
   );
 }
