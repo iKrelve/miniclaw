@@ -35,7 +35,9 @@ pub fn run() {
             });
             Ok(())
         })
-        .on_event(|app, event| {
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 // Gracefully stop sidecar on exit
                 let state = app.state::<Mutex<SidecarState>>();
@@ -43,7 +45,5 @@ pub fn run() {
                     state.stop();
                 }
             }
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        });
 }
