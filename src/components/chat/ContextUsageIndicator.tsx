@@ -40,12 +40,12 @@ export function ContextUsageIndicator({ streamEvents }: ContextUsageIndicatorPro
   const maxContext = 200000 // Anthropic default
   const pct = Math.min((usage.input_tokens / maxContext) * 100, 100)
 
-  const barColor = pct > 80 ? 'bg-red-500' : pct > 50 ? 'bg-amber-500' : 'bg-blue-500'
+  const barColor = pct > 80 ? 'bg-status-error' : pct > 50 ? 'bg-status-warning' : 'bg-primary'
 
   return (
-    <div className="flex items-center gap-3 px-4 py-1.5 text-xs text-zinc-500 border-t border-zinc-100 dark:border-zinc-800">
+    <div className="flex items-center gap-3 px-4 py-1.5 text-xs text-muted-foreground border-t border-border">
       {/* Progress bar */}
-      <div className="flex-1 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
         <div
           className={cn('h-full rounded-full transition-all', barColor)}
           style={{ width: `${pct}%` }}
@@ -56,11 +56,11 @@ export function ContextUsageIndicator({ streamEvents }: ContextUsageIndicatorPro
         <span title="Input tokens">↓{usage.input_tokens.toLocaleString()}</span>
         <span title="Output tokens">↑{usage.output_tokens.toLocaleString()}</span>
         {usage.cache_read_input_tokens ? (
-          <span title="Cache read" className="text-green-500">
+          <span title="Cache read" className="text-status-success-foreground">
             ⚡{usage.cache_read_input_tokens.toLocaleString()}
           </span>
         ) : null}
-        <span className="text-zinc-400">Σ{total.toLocaleString()}</span>
+        <span className="text-muted-foreground/60">Σ{total.toLocaleString()}</span>
       </div>
     </div>
   )

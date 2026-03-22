@@ -86,9 +86,13 @@ const PRESETS: Preset[] = [
     base_url: '',
     extra_env: JSON.stringify(
       {
+        CLAUDE_CODE_AWS_PROFILE: 'claude-profile',
+        CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: '1',
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
         CLAUDE_CODE_USE_BEDROCK: '1',
-        AWS_REGION: 'us-east-1',
-        CLAUDE_CODE_SKIP_BEDROCK_AUTH: '1',
+        AWS_REGION: 'us-west-2',
+        HTTP_PROXY: 'http://proxy-aws-us.zhenguanyu.com:8118',
+        HTTPS_PROXY: 'http://proxy-aws-us.zhenguanyu.com:8118',
       },
       null,
       2,

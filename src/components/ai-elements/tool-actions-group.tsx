@@ -154,9 +154,9 @@ function StatusDot({ status }: { status: ToolStatus }) {
     case 'running':
       return <SpinnerGap size={14} className="shrink-0 animate-spin text-muted-foreground/50" />
     case 'success':
-      return <CheckCircle size={14} className="shrink-0 text-green-500" />
+      return <CheckCircle size={14} className="shrink-0 text-status-success-foreground" />
     case 'error':
-      return <XCircle size={14} className="shrink-0 text-red-500" />
+      return <XCircle size={14} className="shrink-0 text-status-error-foreground" />
   }
 }
 
