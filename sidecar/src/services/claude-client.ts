@@ -515,6 +515,21 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
             }
           }
 
+          // Read tool: auto-approve agent-browser screenshot files.
+          // Screenshots are saved to ~/.agent-browser/tmp/screenshots/ which is
+          // outside the session's cwd, triggering a sandbox permission request.
+          // These files are safe (we control their creation via the screenshot command).
+          if (lowerTool === 'read') {
+            const filePath = (inp.file_path as string) || ''
+            if (
+              filePath.includes('.agent-browser') &&
+              /screenshot.*\.(png|jpg|jpeg)$/i.test(filePath)
+            ) {
+              logger.info('claude', 'Auto-approved screenshot read', { sessionId, filePath })
+              return { behavior: 'allow', updatedInput: inp } as PermissionResult
+            }
+          }
+
           const permId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
           const permEvent: PermissionRequestEvent = {

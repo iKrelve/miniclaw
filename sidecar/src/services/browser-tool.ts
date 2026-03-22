@@ -26,11 +26,11 @@ import { logger } from '../utils/logger'
 // (sips on macOS, ffmpeg on Linux) so no native JS addons needed.
 // ==========================================
 
-const MAX_SCREENSHOT_DIMENSION = 1568
+const MAX_SCREENSHOT_DIMENSION = 1024
 
 /**
  * Resize a screenshot file in-place if it exceeds the dimension limit.
- * Converts to JPEG quality 80 for smaller file size.
+ * Converts to JPEG quality 50 for smaller file size (~70KB).
  * Non-fatal: logs a warning and returns the original path on failure.
  */
 async function resizeScreenshotIfNeeded(filePath: string): Promise<string> {
@@ -52,7 +52,7 @@ async function resizeScreenshotIfNeeded(filePath: string): Promise<string> {
           'jpeg',
           '-s',
           'formatOptions',
-          '80',
+          '50',
           filePath,
           '--out',
           outPath,
@@ -70,7 +70,7 @@ async function resizeScreenshotIfNeeded(filePath: string): Promise<string> {
           '-vf',
           `scale='min(${MAX_SCREENSHOT_DIMENSION},iw)':min'(${MAX_SCREENSHOT_DIMENSION},ih)':force_original_aspect_ratio=decrease`,
           '-q:v',
-          '2',
+          '8',
           outPath,
         ],
         { timeout: 10_000, stdio: 'ignore' },
