@@ -1,79 +1,75 @@
 /**
- * Logger — file-based logging to ~/.miniclaw/logs/sidecar.log
+ * Logger — pino-based logging to ~/.miniclaw/logs/sidecar.log
  *
+ * Uses pino (high-perf JSON logger) + pino-roll (size-based file rotation).
  * Also mirrors to stderr (stdout reserved for Tauri READY protocol).
- * Format: [ISO] [LEVEL] [module] message {json}
+ *
+ * Public API kept as `logger.info(mod, msg, data?)` so call sites are unchanged.
  */
 
-import fs from 'fs'
+import pino from 'pino'
 import path from 'path'
+import fs from 'fs'
 import os from 'os'
 
 const LOG_DIR = path.join(process.env.MINICLAW_DATA_DIR || path.join(os.homedir(), '.miniclaw'), 'logs')
 const LOG_FILE = path.join(LOG_DIR, 'sidecar.log')
 
-// Max log file size before rotation (5MB)
-const MAX_SIZE = 5 * 1024 * 1024
-
-let fd: number | null = null
-
-function ensureDir() {
-  if (!fs.existsSync(LOG_DIR)) {
-    fs.mkdirSync(LOG_DIR, { recursive: true })
-  }
+// Ensure log directory exists before pino-roll tries to open the file
+if (!fs.existsSync(LOG_DIR)) {
+  fs.mkdirSync(LOG_DIR, { recursive: true })
 }
 
-function rotate() {
-  try {
-    const stat = fs.statSync(LOG_FILE)
-    if (stat.size > MAX_SIZE) {
-      const rotated = LOG_FILE + '.1'
-      // Keep only one rotated file
-      if (fs.existsSync(rotated)) fs.unlinkSync(rotated)
-      fs.renameSync(LOG_FILE, rotated)
-      // Reopen fd
-      if (fd !== null) { try { fs.closeSync(fd) } catch {} }
-      fd = null
-    }
-  } catch {
-    // File may not exist yet
+// Create pino instance with two targets:
+//   1. pino-roll → file with size-based rotation (5MB, keep 3 rotated files)
+//   2. stderr → dev console (pino-pretty style via pino/file transport)
+const pinoInstance = pino(
+  {
+    level: 'debug',
+    // Flatten timestamp to ISO string at top level for readability
+    timestamp: pino.stdTimeFunctions.isoTime,
+  },
+  pino.transport({
+    targets: [
+      {
+        target: 'pino-roll',
+        level: 'debug',
+        options: {
+          file: LOG_FILE,
+          size: '5m',
+          limit: { count: 3 },
+        },
+      },
+      {
+        target: 'pino/file',
+        level: 'debug',
+        options: { destination: 2 }, // fd 2 = stderr
+      },
+    ],
+  }),
+)
+
+/**
+ * Wrapper that preserves our `logger.info(mod, msg, data?)` call convention
+ * while delegating to pino's structured logging underneath.
+ */
+function log(level: pino.Level, mod: string, msg: string, data?: Record<string, unknown>) {
+  if (data) {
+    pinoInstance[level]({ mod, ...data }, msg)
+  } else {
+    pinoInstance[level]({ mod }, msg)
   }
-}
-
-function getFd(): number {
-  if (fd !== null) return fd
-  ensureDir()
-  rotate()
-  fd = fs.openSync(LOG_FILE, 'a')
-  return fd
-}
-
-type Level = 'debug' | 'info' | 'warn' | 'error'
-
-function write(level: Level, mod: string, msg: string, data?: Record<string, unknown>) {
-  const ts = new Date().toISOString()
-  const suffix = data ? ' ' + JSON.stringify(data) : ''
-  const line = `[${ts}] [${level.toUpperCase()}] [${mod}] ${msg}${suffix}\n`
-
-  // Write to file
-  try {
-    fs.writeSync(getFd(), line)
-  } catch {
-    // If write fails (e.g. fd became invalid), reset and retry once
-    fd = null
-    try { fs.writeSync(getFd(), line) } catch { /* give up */ }
-  }
-
-  // Also mirror to stderr for dev console visibility
-  process.stderr.write(line)
 }
 
 export const logger = {
-  debug: (mod: string, msg: string, data?: Record<string, unknown>) => write('debug', mod, msg, data),
-  info: (mod: string, msg: string, data?: Record<string, unknown>) => write('info', mod, msg, data),
-  warn: (mod: string, msg: string, data?: Record<string, unknown>) => write('warn', mod, msg, data),
-  error: (mod: string, msg: string, data?: Record<string, unknown>) => write('error', mod, msg, data),
+  debug: (mod: string, msg: string, data?: Record<string, unknown>) => log('debug', mod, msg, data),
+  info: (mod: string, msg: string, data?: Record<string, unknown>) => log('info', mod, msg, data),
+  warn: (mod: string, msg: string, data?: Record<string, unknown>) => log('warn', mod, msg, data),
+  error: (mod: string, msg: string, data?: Record<string, unknown>) => log('error', mod, msg, data),
 
   /** Log path for external tools to read */
   logPath: LOG_FILE,
+
+  /** Underlying pino instance (for advanced use) */
+  pino: pinoInstance,
 }
