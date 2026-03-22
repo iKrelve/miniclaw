@@ -1,9 +1,13 @@
 /**
- * MessageInput — Chat input textarea with send button
+ * MessageInput — Card-style chat input (inspired by CodePilot's PromptInput)
+ *
+ * A full-width card container with a resizable textarea and a footer toolbar
+ * holding the send/stop button. Visually prominent so users immediately know
+ * where to type.
  */
 
 import { useState, useRef, type KeyboardEvent } from 'react';
-import { Send, Square } from 'lucide-react';
+import { Send, Square, CornerDownLeft } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 interface MessageInputProps {
@@ -15,6 +19,7 @@ interface MessageInputProps {
 
 export function MessageInput({ onSend, onInterrupt, isStreaming, disabled }: MessageInputProps) {
   const [value, setValue] = useState('');
+  const [focused, setFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSend = () => {
@@ -42,46 +47,88 @@ export function MessageInput({ onSend, onInterrupt, isStreaming, disabled }: Mes
     const el = textareaRef.current;
     if (el) {
       el.style.height = 'auto';
-      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+      el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
     }
   };
 
+  const canSend = !disabled && value.trim().length > 0;
+
   return (
-    <div className="flex items-end gap-2 p-4 border-t border-zinc-200 dark:border-zinc-800">
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onInput={handleInput}
-        placeholder="发送消息... (Enter 发送, Shift+Enter 换行)"
-        disabled={disabled}
-        rows={1}
+    <div className="px-4 pb-4 pt-2">
+      <div
         className={cn(
-          'flex-1 resize-none rounded-xl px-4 py-3',
-          'bg-zinc-100 dark:bg-zinc-800',
-          'border border-zinc-200 dark:border-zinc-700',
-          'text-sm text-zinc-900 dark:text-zinc-100',
-          'placeholder:text-zinc-400',
-          'focus:outline-none focus:ring-2 focus:ring-blue-500/50',
-          'disabled:opacity-50',
-        )}
-      />
-      <button
-        onClick={isStreaming ? onInterrupt : handleSend}
-        disabled={disabled || (!isStreaming && !value.trim())}
-        className={cn(
-          'flex items-center justify-center',
-          'h-10 w-10 rounded-xl',
-          'transition-colors',
-          isStreaming
-            ? 'bg-red-500 text-white hover:bg-red-600'
-            : 'bg-blue-500 text-white hover:bg-blue-600',
-          'disabled:opacity-50 disabled:cursor-not-allowed',
+          'relative flex flex-col',
+          'rounded-2xl border shadow-sm',
+          'bg-white dark:bg-zinc-900',
+          'transition-shadow',
+          focused
+            ? 'border-blue-400 dark:border-blue-500 shadow-blue-100/50 dark:shadow-blue-900/30 shadow-md'
+            : 'border-zinc-200 dark:border-zinc-700',
         )}
       >
-        {isStreaming ? <Square size={16} /> : <Send size={16} />}
-      </button>
+        {/* Textarea area */}
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onInput={handleInput}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          placeholder="给小龙虾发送消息..."
+          disabled={disabled}
+          rows={3}
+          className={cn(
+            'w-full resize-none',
+            'rounded-t-2xl border-0 bg-transparent',
+            'px-4 pt-4 pb-2',
+            'text-sm text-zinc-900 dark:text-zinc-100',
+            'placeholder:text-zinc-400 dark:placeholder:text-zinc-500',
+            'focus:outline-none',
+            'disabled:opacity-50',
+            'min-h-[80px] max-h-[240px]',
+          )}
+        />
+
+        {/* Footer toolbar */}
+        <div className="flex items-center justify-between px-3 pb-3 pt-1">
+          {/* Left: hints */}
+          <div className="flex items-center gap-1.5 text-xs text-zinc-400 dark:text-zinc-500">
+            <CornerDownLeft size={12} />
+            <span>{isStreaming ? '按 Enter 停止' : 'Enter 发送，Shift+Enter 换行'}</span>
+          </div>
+
+          {/* Right: send / stop button */}
+          <button
+            onClick={isStreaming ? onInterrupt : handleSend}
+            disabled={disabled || (!isStreaming && !canSend)}
+            className={cn(
+              'flex items-center justify-center gap-1.5',
+              'h-8 rounded-lg px-3',
+              'text-xs font-medium',
+              'transition-all duration-150',
+              isStreaming
+                ? 'bg-red-500 text-white hover:bg-red-600 active:scale-95'
+                : canSend
+                  ? 'bg-blue-500 text-white hover:bg-blue-600 active:scale-95'
+                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500',
+              'disabled:opacity-50 disabled:cursor-not-allowed',
+            )}
+          >
+            {isStreaming ? (
+              <>
+                <Square size={12} />
+                <span>停止</span>
+              </>
+            ) : (
+              <>
+                <Send size={12} />
+                <span>发送</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
