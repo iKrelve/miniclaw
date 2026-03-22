@@ -248,7 +248,7 @@ export function ChatView() {
       <div className="flex-1 flex flex-col min-h-0">
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-3">
-            <img src={logo} alt="小龙虾" className="w-12 h-12 mx-auto opacity-40" />
+            <img src={logo} alt="小龙虾" className="w-14 h-14 mx-auto" />
             <p className="text-sm text-zinc-400 dark:text-zinc-500">输入消息开始新对话</p>
           </div>
         </div>

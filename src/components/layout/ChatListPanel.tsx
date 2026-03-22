@@ -12,13 +12,19 @@
  */
 
 import { useEffect, useCallback, useState, useRef } from 'react'
-import { Plus, Search, Trash2, FolderOpen, ChevronRight, ChevronDown } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@radix-ui/react-tooltip'
+import { Plus, Search, Trash2, FolderOpen, ChevronRight, ChevronDown, X } from 'lucide-react'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+  TooltipPortal,
+} from '@radix-ui/react-tooltip'
 import { cn } from '../../lib/utils'
 import { useAppStore } from '../../stores'
 import { useSidecar } from '../../hooks/useSidecar'
 import { useDirectoryPicker } from '../../hooks/useDirectoryPicker'
-import { ConnectionStatus } from './ConnectionStatus'
+import logo from '../../assets/logo.png'
 
 interface ChatListPanelProps {
   open: boolean
@@ -112,6 +118,7 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
     async (e: React.MouseEvent, id: string) => {
       e.stopPropagation()
       if (!baseUrl) return
+      if (!confirm('确定删除这个会话吗？')) return
       try {
         await fetch(`${baseUrl}/sessions/${id}`, { method: 'DELETE' })
         removeSession(id)
@@ -134,6 +141,30 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
     [createSessionWithDir],
   )
 
+  // Delete all sessions in a project group
+  const handleDeleteProject = useCallback(
+    async (e: React.MouseEvent, dir: string) => {
+      e.stopPropagation()
+      if (!baseUrl) return
+      const toDelete = sessions.filter((s) => (s.working_directory || '') === dir)
+      if (
+        !confirm(
+          `确定删除「${dir.split('/').filter(Boolean).pop() || dir}」下的 ${toDelete.length} 个会话吗？`,
+        )
+      )
+        return
+      for (const s of toDelete) {
+        try {
+          await fetch(`${baseUrl}/sessions/${s.id}`, { method: 'DELETE' })
+          removeSession(s.id)
+        } catch {
+          // continue deleting others
+        }
+      }
+    },
+    [baseUrl, sessions, removeSession],
+  )
+
   const toggleGroup = useCallback((dir: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev)
@@ -154,9 +185,10 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
   return (
     <TooltipProvider delayDuration={200}>
       <aside className="flex h-full w-60 shrink-0 flex-col overflow-hidden bg-[var(--sidebar)]/80 backdrop-blur-xl border-r border-[var(--sidebar-border)]">
-        {/* Header — ConnectionStatus + extra top padding for macOS traffic lights */}
-        <div className="flex h-12 shrink-0 items-center justify-between px-3 mt-5">
-          <ConnectionStatus />
+        {/* Header — app icon + extra top padding for macOS traffic lights */}
+        <div className="flex h-12 shrink-0 items-center gap-2 px-3 mt-5">
+          <img src={logo} alt="小龙虾" className="w-6 h-6 rounded" />
+          <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">小龙虾</span>
         </div>
 
         {/* New Chat + Open Folder */}
@@ -177,12 +209,14 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
                 <FolderOpen size={14} />
               </button>
             </TooltipTrigger>
-            <TooltipContent
-              side="bottom"
-              className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900"
-            >
-              打开项目文件夹
-            </TooltipContent>
+            <TooltipPortal>
+              <TooltipContent
+                side="bottom"
+                className="z-50 rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900"
+              >
+                打开项目文件夹
+              </TooltipContent>
+            </TooltipPortal>
           </Tooltip>
         </div>
 
@@ -248,13 +282,23 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
                       >
                         {dirName}
                       </span>
-                      {/* Create session in this project */}
-                      <button
-                        onClick={(e) => handleCreateInProject(e, group.dir)}
-                        className="opacity-0 group-hover/folder:opacity-100 flex h-5 w-5 items-center justify-center rounded text-[var(--muted-foreground)] hover:text-[var(--sidebar-accent-foreground)] hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all shrink-0"
-                      >
-                        <Plus size={12} />
-                      </button>
+                      {/* Hover actions: create session + delete project */}
+                      <div className="opacity-0 group-hover/folder:opacity-100 flex items-center gap-0.5 shrink-0 transition-all">
+                        <button
+                          onClick={(e) => handleCreateInProject(e, group.dir)}
+                          className="flex h-5 w-5 items-center justify-center rounded text-[var(--muted-foreground)] hover:text-[var(--sidebar-accent-foreground)] hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                          title="在此项目中新建会话"
+                        >
+                          <Plus size={12} />
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteProject(e, group.dir)}
+                          className="flex h-5 w-5 items-center justify-center rounded text-[var(--muted-foreground)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                          title="删除此项目的所有会话"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
                     </div>
                   )}
 

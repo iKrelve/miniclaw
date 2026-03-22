@@ -12,7 +12,13 @@
  */
 
 import { MessageSquare, Sparkles, Puzzle, Settings } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@radix-ui/react-tooltip'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+  TooltipPortal,
+} from '@radix-ui/react-tooltip'
 import { cn } from '../../lib/utils'
 import { useSidecar } from '../../hooks/useSidecar'
 
@@ -64,18 +70,20 @@ export function NavRail({ currentView, onNavigate, onToggleChatList }: NavRailPr
                       'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
                       isActive
                         ? 'bg-[var(--sidebar-accent)] text-[var(--sidebar-accent-foreground)]'
-                        : 'text-[var(--muted-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]',
+                        : 'text-zinc-500 dark:text-zinc-400 hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]',
                     )}
                   >
                     <item.icon size={16} />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent
-                  side="right"
-                  className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900"
-                >
-                  {item.label}
-                </TooltipContent>
+                <TooltipPortal>
+                  <TooltipContent
+                    side="right"
+                    className="z-50 rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900"
+                  >
+                    {item.label}
+                  </TooltipContent>
+                </TooltipPortal>
               </Tooltip>
             )
           })}
@@ -95,12 +103,14 @@ export function NavRail({ currentView, onNavigate, onToggleChatList }: NavRailPr
                 />
               </div>
             </TooltipTrigger>
-            <TooltipContent
-              side="right"
-              className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900"
-            >
-              {error || (ready ? '已连接' : '连接中...')}
-            </TooltipContent>
+            <TooltipPortal>
+              <TooltipContent
+                side="right"
+                className="z-50 rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900"
+              >
+                {error || (ready ? '已连接' : '连接中...')}
+              </TooltipContent>
+            </TooltipPortal>
           </Tooltip>
 
           {/* Settings */}
@@ -112,18 +122,20 @@ export function NavRail({ currentView, onNavigate, onToggleChatList }: NavRailPr
                   'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
                   currentView === 'settings'
                     ? 'bg-[var(--sidebar-accent)] text-[var(--sidebar-accent-foreground)]'
-                    : 'text-[var(--muted-foreground)] hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]',
+                    : 'text-zinc-500 dark:text-zinc-400 hover:bg-[var(--sidebar-accent)] hover:text-[var(--sidebar-accent-foreground)]',
                 )}
               >
                 <Settings size={16} />
               </button>
             </TooltipTrigger>
-            <TooltipContent
-              side="right"
-              className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900"
-            >
-              设置
-            </TooltipContent>
+            <TooltipPortal>
+              <TooltipContent
+                side="right"
+                className="z-50 rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900"
+              >
+                设置
+              </TooltipContent>
+            </TooltipPortal>
           </Tooltip>
         </div>
       </aside>

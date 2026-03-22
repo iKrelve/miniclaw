@@ -8,7 +8,13 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { FolderGit2, FolderOpen, Pencil } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@radix-ui/react-tooltip'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+  TooltipPortal,
+} from '@radix-ui/react-tooltip'
 import { useAppStore } from '../../stores'
 import { useSidecar } from '../../hooks/useSidecar'
 
@@ -128,9 +134,11 @@ export function UnifiedTopBar({ currentView }: UnifiedTopBarProps) {
                       {projectName}
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900 break-all max-w-[300px]">
-                    {activeSession?.working_directory}
-                  </TooltipContent>
+                  <TooltipPortal>
+                    <TooltipContent className="z-50 rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900 break-all max-w-[300px]">
+                      {activeSession?.working_directory}
+                    </TooltipContent>
+                  </TooltipPortal>
                 </Tooltip>
               )}
             </>
@@ -154,12 +162,14 @@ export function UnifiedTopBar({ currentView }: UnifiedTopBarProps) {
                   <FolderGit2 size={16} />
                 </button>
               </TooltipTrigger>
-              <TooltipContent
-                side="bottom"
-                className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900"
-              >
-                Git (即将支持)
-              </TooltipContent>
+              <TooltipPortal>
+                <TooltipContent
+                  side="bottom"
+                  className="z-50 rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900"
+                >
+                  Git (即将支持)
+                </TooltipContent>
+              </TooltipPortal>
             </Tooltip>
 
             <Tooltip>
@@ -168,12 +178,14 @@ export function UnifiedTopBar({ currentView }: UnifiedTopBarProps) {
                   <FolderOpen size={16} />
                 </button>
               </TooltipTrigger>
-              <TooltipContent
-                side="bottom"
-                className="rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900"
-              >
-                文件树 (即将支持)
-              </TooltipContent>
+              <TooltipPortal>
+                <TooltipContent
+                  side="bottom"
+                  className="z-50 rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-xs text-white dark:text-zinc-900"
+                >
+                  文件树 (即将支持)
+                </TooltipContent>
+              </TooltipPortal>
             </Tooltip>
           </div>
         )}
