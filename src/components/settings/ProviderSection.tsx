@@ -5,8 +5,9 @@
  *   Section 1: "已连接" — Claude Code default + user-added providers
  *   Section 2: "添加 Provider" — Quick Presets list, click to open Dialog
  *
- * Adding a provider opens a Dialog (not an inline form), matching CodePilot's
- * PresetConnectDialog UX.
+ * Each preset defines a `fields` array controlling which form fields the
+ * Dialog shows, and an `extra_env` default value for pre-populated JSON
+ * (e.g. AWS Bedrock credentials).
  */
 
 import { useEffect, useState, useCallback } from 'react'
@@ -28,6 +29,8 @@ interface Provider {
   is_active: number
 }
 
+type PresetField = 'name' | 'api_key' | 'base_url' | 'extra_env'
+
 interface Preset {
   key: string
   name: string
@@ -35,9 +38,13 @@ interface Preset {
   icon: typeof Server
   type: string
   base_url: string
+  /** Pre-filled extra environment JSON (e.g. Bedrock AWS config) */
+  extra_env: string
+  /** Which fields to show in the connect Dialog */
+  fields: PresetField[]
 }
 
-// ─── Preset definitions ──────────────────────────────────────────────────────
+// ─── Preset definitions (mirrors CodePilot's provider-presets.tsx) ────────────
 
 const PRESETS: Preset[] = [
   {
@@ -47,6 +54,8 @@ const PRESETS: Preset[] = [
     icon: Zap,
     type: 'anthropic',
     base_url: 'https://api.anthropic.com',
+    extra_env: '{}',
+    fields: ['api_key'],
   },
   {
     key: 'openai',
@@ -55,6 +64,8 @@ const PRESETS: Preset[] = [
     icon: Cloud,
     type: 'openai',
     base_url: 'https://api.openai.com',
+    extra_env: '{}',
+    fields: ['api_key'],
   },
   {
     key: 'google',
@@ -63,6 +74,8 @@ const PRESETS: Preset[] = [
     icon: Globe,
     type: 'google',
     base_url: 'https://generativelanguage.googleapis.com',
+    extra_env: '{}',
+    fields: ['api_key'],
   },
   {
     key: 'bedrock',
@@ -71,6 +84,16 @@ const PRESETS: Preset[] = [
     icon: Server,
     type: 'bedrock',
     base_url: '',
+    extra_env: JSON.stringify(
+      {
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        AWS_REGION: 'us-east-1',
+        CLAUDE_CODE_SKIP_BEDROCK_AUTH: '1',
+      },
+      null,
+      2,
+    ),
+    fields: ['extra_env'],
   },
   {
     key: 'vertex',
@@ -79,6 +102,16 @@ const PRESETS: Preset[] = [
     icon: Cloud,
     type: 'vertex',
     base_url: '',
+    extra_env: JSON.stringify(
+      {
+        CLAUDE_CODE_USE_VERTEX: '1',
+        CLOUD_ML_REGION: 'us-east5',
+        CLAUDE_CODE_SKIP_VERTEX_AUTH: '1',
+      },
+      null,
+      2,
+    ),
+    fields: ['extra_env'],
   },
   {
     key: 'custom',
@@ -87,6 +120,8 @@ const PRESETS: Preset[] = [
     icon: Wrench,
     type: 'custom',
     base_url: '',
+    extra_env: '{}',
+    fields: ['name', 'api_key', 'base_url', 'extra_env'],
   },
 ]
 
@@ -94,6 +129,9 @@ const PRESETS: Preset[] = [
 
 const inputClass =
   'w-full px-3 py-2 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 outline-none focus:border-blue-500 dark:focus:border-blue-400 transition-colors font-mono'
+
+const textareaClass =
+  'w-full px-3 py-2 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 outline-none focus:border-blue-500 dark:focus:border-blue-400 transition-colors font-mono resize-y min-h-[80px]'
 
 // ─── Provider icon resolver ──────────────────────────────────────────────────
 
@@ -114,6 +152,16 @@ function providerIcon(type: string) {
   }
 }
 
+// ─── Save data shape ─────────────────────────────────────────────────────────
+
+interface SaveData {
+  name: string
+  type: string
+  api_key: string
+  base_url: string
+  extra_env?: string
+}
+
 // ─── Connect Dialog ──────────────────────────────────────────────────────────
 
 function ConnectDialog({
@@ -126,13 +174,14 @@ function ConnectDialog({
   preset: Preset | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSave: (data: { name: string; type: string; api_key: string; base_url: string }) => Promise<void>
+  onSave: (data: SaveData) => Promise<void>
   editProvider?: Provider | null
 }) {
   const isEdit = !!editProvider
   const [name, setName] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
+  const [extraEnv, setExtraEnv] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -145,22 +194,38 @@ function ConnectDialog({
       setName(editProvider.name)
       setApiKey(editProvider.api_key || '')
       setBaseUrl(editProvider.base_url || '')
+      // For extra_env, try to pretty-print if it's valid JSON
+      setExtraEnv(formatJson(editProvider.base_url ? '' : preset.extra_env))
     } else {
       setName(preset.name)
       setApiKey('')
       setBaseUrl(preset.base_url)
+      setExtraEnv(preset.extra_env)
     }
   }, [open, preset, isEdit, editProvider])
 
   if (!preset) return null
 
+  const has = (field: PresetField) => preset.fields.includes(field) || isEdit
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
 
-    if (!apiKey.trim() && preset.key !== 'bedrock' && preset.key !== 'vertex') {
+    // Validate API key for presets that need it
+    if (preset.fields.includes('api_key') && !apiKey.trim()) {
       setError('请输入 API Key')
       return
+    }
+
+    // Validate extra_env JSON if present
+    if (extraEnv.trim() && extraEnv.trim() !== '{}') {
+      try {
+        JSON.parse(extraEnv)
+      } catch {
+        setError('环境变量必须是有效的 JSON 格式')
+        return
+      }
     }
 
     setSaving(true)
@@ -170,6 +235,7 @@ function ConnectDialog({
         type: preset.type,
         api_key: apiKey.trim(),
         base_url: baseUrl.trim(),
+        extra_env: extraEnv.trim() || '{}',
       })
       onOpenChange(false)
     } catch (err) {
@@ -193,8 +259,8 @@ function ConnectDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          {/* Name */}
-          {(preset.key === 'custom' || isEdit) && (
+          {/* Name — shown for custom preset or edit mode */}
+          {has('name') && (
             <div>
               <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
                 名称
@@ -209,8 +275,8 @@ function ConnectDialog({
             </div>
           )}
 
-          {/* Base URL */}
-          {(preset.key === 'custom' || preset.base_url === '' || isEdit) && (
+          {/* Base URL — shown when preset has it in fields, or edit mode */}
+          {has('base_url') && (
             <div>
               <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
                 Base URL
@@ -225,8 +291,8 @@ function ConnectDialog({
             </div>
           )}
 
-          {/* API Key */}
-          {preset.key !== 'bedrock' && preset.key !== 'vertex' && (
+          {/* API Key — shown when preset has it in fields */}
+          {has('api_key') && (
             <div>
               <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
                 API Key
@@ -242,13 +308,22 @@ function ConnectDialog({
             </div>
           )}
 
-          {/* Environment hint for Bedrock / Vertex */}
-          {(preset.key === 'bedrock' || preset.key === 'vertex') && (
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-              {preset.key === 'bedrock'
-                ? '请在 API 代理页配置 AWS 凭证相关环境变量 (AWS_REGION, AWS_ACCESS_KEY_ID 等)'
-                : '请在 API 代理页配置 GCP 凭证相关环境变量 (CLOUD_ML_REGION 等)'}
-            </p>
+          {/* Extra env JSON — shown for bedrock/vertex/custom (pre-filled with defaults) */}
+          {has('extra_env') && (
+            <div>
+              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                环境变量 (JSON)
+              </label>
+              <textarea
+                value={extraEnv}
+                onChange={(e) => setExtraEnv(e.target.value)}
+                className={textareaClass}
+                rows={4}
+              />
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                传递给底层 Claude 进程的环境变量，JSON 格式
+              </p>
+            </div>
           )}
 
           {error && <p className="text-sm text-red-500">{error}</p>}
@@ -326,6 +401,17 @@ function DeleteDialog({
   )
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Try to pretty-print JSON; return original string on failure. */
+function formatJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2)
+  } catch {
+    return raw
+  }
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export function ProviderSection() {
@@ -356,12 +442,7 @@ export function ProviderSection() {
     fetchProviders()
   }, [fetchProviders])
 
-  const handleConnect = async (data: {
-    name: string
-    type: string
-    api_key: string
-    base_url: string
-  }) => {
+  const handleConnect = async (data: SaveData) => {
     if (!baseUrl) return
     const res = await fetch(`${baseUrl}/providers`, {
       method: 'POST',
@@ -382,12 +463,7 @@ export function ProviderSection() {
     setConnectDialogOpen(true)
   }
 
-  const handleEditSave = async (data: {
-    name: string
-    type: string
-    api_key: string
-    base_url: string
-  }) => {
+  const handleEditSave = async (data: SaveData) => {
     if (!baseUrl || !editProvider) return
     const res = await fetch(`${baseUrl}/providers/${editProvider.id}`, {
       method: 'PUT',
@@ -398,7 +474,6 @@ export function ProviderSection() {
       const err = await res.json().catch(() => ({}))
       throw new Error(err.error || 'Failed to update provider')
     }
-    // Refresh full list
     await fetchProviders()
   }
 

@@ -149,7 +149,7 @@ function TokenUsageDisplay({ raw }: { raw: string }) {
     const parts = [`${input} in`, `${output} out`]
     if (cache > 0) parts.push(`${cache} cached`)
     return (
-      <span className="text-[10px] text-zinc-400/60 tabular-nums" title="Token usage">
+      <span className="text-[10px] text-muted-foreground/50 tabular-nums" title="Token usage">
         {parts.join(' · ')}
       </span>
     )
@@ -179,10 +179,10 @@ function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={handle}
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors"
       title="Copy"
     >
-      {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
+      {copied ? <Check size={12} className="text-status-success-foreground" /> : <Copy size={12} />}
     </button>
   )
 }
@@ -272,13 +272,13 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
                 {text}
               </div>
               {overflowing && !expanded && (
-                <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-blue-500 to-transparent pointer-events-none" />
+                <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-secondary to-transparent pointer-events-none" />
               )}
               {overflowing && (
                 <button
                   type="button"
                   onClick={() => setExpanded(!expanded)}
-                  className="relative z-10 flex items-center gap-1 mt-1 text-xs text-white/70 hover:text-white h-auto px-1 py-0.5"
+                  className="relative z-10 flex items-center gap-1 mt-1 text-xs text-muted-foreground hover:text-foreground h-auto px-1 py-0.5"
                 >
                   {expanded ? (
                     <>
@@ -303,7 +303,9 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
       <div
         className={`flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${isUser ? 'justify-end' : ''}`}
       >
-        {!isUser && timestamp && <span className="text-xs text-zinc-400/60">{timestamp}</span>}
+        {!isUser && timestamp && (
+          <span className="text-xs text-muted-foreground/50">{timestamp}</span>
+        )}
         {!isUser && message.token_usage && <TokenUsageDisplay raw={message.token_usage} />}
         {text && <CopyButton text={text} />}
       </div>

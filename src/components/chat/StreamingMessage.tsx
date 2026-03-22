@@ -74,23 +74,33 @@ function StreamingStatusBar({
   const isCritical = toolElapsed >= 90
 
   return (
-    <div className="flex items-center gap-3 py-2 px-1 text-xs text-zinc-500">
+    <div className="flex items-center gap-3 py-2 px-1 text-xs text-muted-foreground">
       <div className="flex items-center gap-2">
-        <span className={isCritical ? 'text-red-500' : isWarning ? 'text-amber-500' : undefined}>
+        <span
+          className={
+            isCritical
+              ? 'text-status-error-foreground'
+              : isWarning
+                ? 'text-status-warning-foreground'
+                : undefined
+          }
+        >
           <Shimmer duration={1.5}>{display}</Shimmer>
         </span>
         {isWarning && !isCritical && (
-          <span className="text-amber-500 text-[10px]">运行时间较长</span>
+          <span className="text-status-warning-foreground text-[10px]">运行时间较长</span>
         )}
-        {isCritical && <span className="text-red-500 text-[10px]">工具可能已卡住</span>}
+        {isCritical && (
+          <span className="text-status-error-foreground text-[10px]">工具可能已卡住</span>
+        )}
       </div>
-      <span className="text-zinc-400/50">|</span>
+      <span className="text-muted-foreground/50">|</span>
       <ElapsedTimer />
       {isCritical && onForceStop && (
         <button
           type="button"
           onClick={onForceStop}
-          className="ml-auto border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 text-[10px] font-medium text-red-600 dark:text-red-400 px-2 py-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
+          className="ml-auto border border-status-error-border bg-status-error-muted text-[10px] font-medium text-status-error-foreground px-2 py-0.5 rounded hover:bg-status-error-muted transition-colors"
         >
           强制停止
         </button>

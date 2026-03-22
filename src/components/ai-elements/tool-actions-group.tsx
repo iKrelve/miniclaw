@@ -152,7 +152,7 @@ function getStatus(tool: ToolAction): ToolStatus {
 function StatusDot({ status }: { status: ToolStatus }) {
   switch (status) {
     case 'running':
-      return <SpinnerGap size={14} className="shrink-0 animate-spin text-muted-foreground" />
+      return <SpinnerGap size={14} className="shrink-0 animate-spin text-muted-foreground/50" />
     case 'success':
       return <CheckCircle size={14} className="shrink-0 text-green-500" />
     case 'error':
@@ -179,10 +179,10 @@ function ToolActionRow({ tool }: { tool: ToolAction }) {
 
       {label && <span className="font-medium text-muted-foreground shrink-0">{label}</span>}
 
-      <span className="font-mono text-muted-foreground/80 truncate flex-1">{summary}</span>
+      <span className="font-mono text-muted-foreground/60 truncate flex-1">{summary}</span>
 
       {filePath && (category === 'read' || category === 'write') && (
-        <span className="text-muted-foreground/50 text-[11px] font-mono truncate max-w-[200px] hidden sm:inline">
+        <span className="text-muted-foreground/40 text-[11px] font-mono truncate max-w-[200px] hidden sm:inline">
           {truncatePath(filePath)}
         </span>
       )}
@@ -235,7 +235,7 @@ export function ToolActionsGroup({ tools, isStreaming = false }: ToolActionsGrou
   if (parts.length === 0) parts.push(`${tools.length} actions`)
 
   return (
-    <div className="w-full max-w-3xl">
+    <div className="w-[min(100%,48rem)]">
       {/* Header */}
       <button
         type="button"
@@ -245,19 +245,19 @@ export function ToolActionsGroup({ tools, isStreaming = false }: ToolActionsGrou
         <CaretRight
           size={12}
           className={cn(
-            'shrink-0 text-muted-foreground transition-transform duration-200',
+            'shrink-0 text-muted-foreground/60 transition-transform duration-200',
             expanded && 'rotate-90',
           )}
         />
 
-        <span className="inline-flex items-center justify-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground tabular-nums">
+        <span className="inline-flex items-center justify-center rounded bg-muted/80 px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground/70 tabular-nums">
           {tools.length}
         </span>
 
-        <span className="text-muted-foreground truncate">{parts.join(' · ')}</span>
+        <span className="text-muted-foreground/60 truncate">{parts.join(' · ')}</span>
 
         {runningDesc && (
-          <span className="ml-auto text-muted-foreground/50 text-[11px] font-mono truncate max-w-[40%]">
+          <span className="ml-auto text-muted-foreground/40 text-[11px] font-mono truncate max-w-[40%]">
             {runningDesc}
           </span>
         )}
@@ -279,7 +279,7 @@ export function ToolActionsGroup({ tools, isStreaming = false }: ToolActionsGrou
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.12, ease: 'easeOut' }}
             >
-              <div className="ml-1.5 mt-0.5 border-l-2 border-border pl-2">
+              <div className="ml-1.5 mt-0.5 border-l-2 border-border/50 pl-2">
                 {tools.map((tool, i) => (
                   <ToolActionRow key={tool.id || `tool-${i}`} tool={tool} />
                 ))}

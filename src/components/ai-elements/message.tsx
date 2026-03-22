@@ -32,9 +32,9 @@ export type MessageContentProps = HTMLAttributes<HTMLDivElement>
 export const MessageContent = ({ children, className, ...props }: MessageContentProps) => (
   <div
     className={cn(
-      'flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-sm',
+      'is-user:dark flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-sm',
       // User bubble styling
-      'group-[.is-user]:ml-auto group-[.is-user]:rounded-lg group-[.is-user]:bg-[var(--user-bubble,theme(colors.blue.500))] group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-[var(--user-bubble-foreground,white)]',
+      'group-[.is-user]:ml-auto group-[.is-user]:rounded-lg group-[.is-user]:bg-(--user-bubble) group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-(--user-bubble-foreground)',
       // Assistant: full width, normal text
       'group-[.is-assistant]:w-full group-[.is-assistant]:text-foreground',
       className,
@@ -67,7 +67,7 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown>
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
     <Streamdown
-      className={cn('prose size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0', className)}
+      className={cn('size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0', className)}
       plugins={plugins}
       {...props}
     />

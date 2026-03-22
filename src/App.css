@@ -1,33 +1,239 @@
 @import 'tailwindcss';
 @import 'streamdown/styles.css';
 
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  /* Status semantic colors */
+  --color-status-success: var(--status-success);
+  --color-status-success-foreground: var(--status-success-foreground);
+  --color-status-success-muted: var(--status-success-muted);
+  --color-status-success-border: var(--status-success-border);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-foreground: var(--status-warning-foreground);
+  --color-status-warning-muted: var(--status-warning-muted);
+  --color-status-warning-border: var(--status-warning-border);
+  --color-status-error: var(--status-error);
+  --color-status-error-foreground: var(--status-error-foreground);
+  --color-status-error-muted: var(--status-error-muted);
+  --color-status-error-border: var(--status-error-border);
+  --color-status-info: var(--status-info);
+  --color-status-info-foreground: var(--status-info-foreground);
+  --color-status-info-muted: var(--status-info-muted);
+  --color-status-info-border: var(--status-info-border);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@custom-variant dark (&:is(.dark *));
+
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: light dark;
 
-  /* Sidebar semantic tokens (CodePilot-aligned) */
+  --radius: 0.75rem;
+
+  /* Core semantic tokens */
+  --background: #ffffff;
+  --foreground: #09090b;
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+  --primary: #3b82f6;
+  --primary-foreground: #fafafa;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+  --destructive: #ef4444;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #3b82f6;
+
+  /* Sidebar */
   --sidebar: #fafafa;
   --sidebar-foreground: #18181b;
   --sidebar-border: #e4e4e7;
   --sidebar-accent: #f4f4f5;
   --sidebar-accent-foreground: #27272a;
-  --muted-foreground: #71717a;
+
+  /* User bubble */
+  --user-bubble: #3b82f6;
+  --user-bubble-foreground: #ffffff;
+
+  /* Status semantic tokens */
+  --status-success: #22c55e;
+  --status-success-foreground: #16a34a;
+  --status-success-muted: rgba(34, 197, 94, 0.1);
+  --status-success-border: rgba(34, 197, 94, 0.2);
+  --status-warning: #eab308;
+  --status-warning-foreground: #ca8a04;
+  --status-warning-muted: rgba(234, 179, 8, 0.1);
+  --status-warning-border: rgba(234, 179, 8, 0.2);
+  --status-error: #ef4444;
+  --status-error-foreground: #ef4444;
+  --status-error-muted: rgba(239, 68, 68, 0.1);
+  --status-error-border: rgba(239, 68, 68, 0.2);
+  --status-info: #3b82f6;
+  --status-info-foreground: #3b82f6;
+  --status-info-muted: rgba(59, 130, 246, 0.1);
+  --status-info-border: rgba(59, 130, 246, 0.2);
 }
 
 .dark {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #18181b;
+  --card-foreground: #fafafa;
+  --popover: #18181b;
+  --popover-foreground: #fafafa;
+  --primary: #60a5fa;
+  --primary-foreground: #fafafa;
+  --secondary: #27272a;
+  --secondary-foreground: #fafafa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
+  --destructive: #f87171;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.15);
+  --ring: #60a5fa;
+
+  /* Sidebar */
   --sidebar: #0a0a0a;
   --sidebar-foreground: #fafafa;
   --sidebar-border: #27272a;
   --sidebar-accent: #1c1c1e;
   --sidebar-accent-foreground: #e4e4e7;
-  --muted-foreground: #a1a1aa;
+
+  /* User bubble */
+  --user-bubble: #e4e4e7;
+  --user-bubble-foreground: #09090b;
+
+  /* Status semantic tokens */
+  --status-success: #22c55e;
+  --status-success-foreground: #16a34a;
+  --status-success-muted: rgba(34, 197, 94, 0.1);
+  --status-success-border: rgba(34, 197, 94, 0.2);
+  --status-warning: #eab308;
+  --status-warning-foreground: #eab308;
+  --status-warning-muted: rgba(234, 179, 8, 0.1);
+  --status-warning-border: rgba(234, 179, 8, 0.2);
+  --status-error: #f87171;
+  --status-error-foreground: #f87171;
+  --status-error-muted: rgba(248, 113, 113, 0.1);
+  --status-error-border: rgba(248, 113, 113, 0.2);
+  --status-info: #60a5fa;
+  --status-info-foreground: #60a5fa;
+  --status-info-muted: rgba(96, 165, 250, 0.1);
+  --status-info-border: rgba(96, 165, 250, 0.2);
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muted-foreground) 25%, transparent);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--muted-foreground) 40%, transparent);
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muted-foreground) 30%, transparent);
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
+  }
+
+  /* Prose (markdown) refinements — aligned with CodePilot */
+  .prose {
+    --tw-prose-headings: var(--foreground);
+    line-height: 1.7;
+  }
+  .prose p {
+    margin-top: 0.75em;
+    margin-bottom: 0.75em;
+  }
+  .prose h1,
+  .prose h2,
+  .prose h3 {
+    margin-top: 1.25em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+  }
+  .prose ul,
+  .prose ol {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+  }
+  .prose li {
+    margin-top: 0.25em;
+    margin-bottom: 0.25em;
+  }
+  .prose blockquote {
+    border-left-color: color-mix(in srgb, var(--primary) 40%, transparent);
+    font-style: normal;
+  }
+  .prose a {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .dark .prose a {
+    color: var(--primary);
+  }
+  .prose hr {
+    border-color: var(--border);
+  }
+  .prose table th {
+    font-weight: 600;
+  }
 }
 
 /* macOS title bar drag region */
@@ -42,88 +248,8 @@ body {
 }
 
 /* ============================================================
-   Prose styles for Streamdown Markdown output (CodePilot-aligned)
+   Streamdown code block styles — use semantic variables
    ============================================================ */
-
-/* --- Base --- */
-.prose {
-  line-height: 1.7;
-  color: inherit;
-  font-size: 0.875rem;
-}
-
-/* --- Typography --- */
-.prose p {
-  margin-top: 0.75em;
-  margin-bottom: 0.75em;
-}
-
-.prose h1,
-.prose h2,
-.prose h3 {
-  margin-top: 1.25em;
-  margin-bottom: 0.5em;
-  font-weight: 600;
-  color: inherit;
-}
-
-.prose h1 {
-  font-size: 1.25rem;
-}
-.prose h2 {
-  font-size: 1.125rem;
-}
-.prose h3 {
-  font-size: 1rem;
-}
-
-.prose ul,
-.prose ol {
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
-  padding-left: 1.5em;
-}
-
-.prose ul {
-  list-style-type: disc;
-}
-.prose ol {
-  list-style-type: decimal;
-}
-
-.prose li {
-  margin-top: 0.25em;
-  margin-bottom: 0.25em;
-}
-
-.prose blockquote {
-  border-left: 4px solid #3b82f6;
-  padding-left: 1em;
-  margin: 0.75em 0;
-  color: #71717a;
-  font-style: normal;
-}
-.dark .prose blockquote {
-  color: #a1a1aa;
-}
-
-.prose a {
-  color: #3b82f6;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.prose hr {
-  border-color: #e4e4e7;
-  margin: 1em 0;
-}
-.dark .prose hr {
-  border-color: #27272a;
-}
-
-.prose strong {
-  font-weight: 600;
-}
 
 /* --- Code blocks --- */
 .prose pre {
@@ -133,13 +259,9 @@ body {
   overflow-x: auto;
   font-size: 0.8125rem;
   line-height: 1.6;
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
+  background: var(--muted);
+  border: 1px solid var(--border);
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-}
-.dark .prose pre {
-  background: #18181b;
-  border-color: #27272a;
 }
 
 /* Code inside pre — reset inline code styles */
@@ -154,16 +276,12 @@ body {
 
 /* Inline code */
 .prose code {
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
+  background: var(--muted);
+  border: 1px solid var(--border);
   border-radius: 0.25rem;
   padding: 0.125em 0.375em;
   font-size: 0.8125rem;
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-}
-.dark .prose code {
-  background: #27272a;
-  border-color: #3f3f46;
 }
 
 /* --- Tables --- */
@@ -178,20 +296,13 @@ body {
   padding: 0.5rem 0.75rem;
   text-align: left;
   font-weight: 600;
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
-}
-.dark .prose th {
-  background: #27272a;
-  border-color: #3f3f46;
+  background: var(--muted);
+  border: 1px solid var(--border);
 }
 
 .prose td {
   padding: 0.5rem 0.75rem;
-  border: 1px solid #e4e4e7;
-}
-.dark .prose td {
-  border-color: #3f3f46;
+  border: 1px solid var(--border);
 }
 
 /* --- Streamdown code block header (language + copy/download buttons) --- */
@@ -201,16 +312,11 @@ body {
   justify-content: space-between;
   padding: 0.375rem 0.75rem;
   font-size: 0.75rem;
-  color: #71717a;
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border: 1px solid var(--border);
   border-bottom: none;
   border-radius: 0.5rem 0.5rem 0 0;
-}
-.dark .prose header {
-  color: #a1a1aa;
-  background: #1c1c1e;
-  border-color: #27272a;
 }
 
 /* When header is followed by pre, join them visually */
@@ -226,17 +332,13 @@ body {
   border: none;
   cursor: pointer;
   padding: 0.25rem;
-  color: #71717a;
+  color: var(--muted-foreground);
   border-radius: 0.25rem;
   transition:
     color 150ms,
     background 150ms;
 }
 .prose header button:hover {
-  color: #18181b;
-  background: #e4e4e7;
-}
-.dark .prose header button:hover {
-  color: #fafafa;
-  background: #3f3f46;
+  color: var(--foreground);
+  background: var(--border);
 }

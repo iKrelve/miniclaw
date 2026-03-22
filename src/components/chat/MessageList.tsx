@@ -149,7 +149,7 @@ export function MessageList({
         {errors.map((err, i) => (
           <div
             key={`err-${i}`}
-            className="max-w-3xl rounded-lg px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm"
+            className="max-w-3xl rounded-lg px-4 py-3 bg-status-error-muted border border-status-error-border text-status-error-foreground text-sm"
           >
             <span className="font-medium">错误：</span>
             {err}
