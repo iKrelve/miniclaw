@@ -24,8 +24,8 @@ const ShimmerInner = ({ children, className, duration = 2, spread = 2 }: Shimmer
       animate={{ backgroundPosition: '0% center' }}
       className={cn(
         'relative inline-block bg-[length:250%_100%,auto] bg-clip-text text-transparent',
-        '[--bg:linear-gradient(90deg,#0000_calc(50%-var(--spread)),theme(colors.zinc.100),#0000_calc(50%+var(--spread)))] [background-repeat:no-repeat,padding-box]',
-        'dark:[--bg:linear-gradient(90deg,#0000_calc(50%-var(--spread)),theme(colors.zinc.800),#0000_calc(50%+var(--spread)))]',
+        '[--bg:linear-gradient(90deg,#0000_calc(50%-var(--spread)),var(--color-muted-foreground,theme(colors.zinc.100)),#0000_calc(50%+var(--spread)))] [background-repeat:no-repeat,padding-box]',
+        'dark:[--bg:linear-gradient(90deg,#0000_calc(50%-var(--spread)),var(--color-muted-foreground,theme(colors.zinc.800)),#0000_calc(50%+var(--spread)))]',
         className,
       )}
       initial={{ backgroundPosition: '100% center' }}
@@ -33,7 +33,7 @@ const ShimmerInner = ({ children, className, duration = 2, spread = 2 }: Shimmer
         {
           '--spread': `${dynamicSpread}px`,
           backgroundImage:
-            'var(--bg), linear-gradient(theme(colors.zinc.400), theme(colors.zinc.400))',
+            'var(--bg), linear-gradient(var(--color-muted-foreground,theme(colors.zinc.400)), var(--color-muted-foreground,theme(colors.zinc.400)))',
         } as CSSProperties
       }
       transition={{

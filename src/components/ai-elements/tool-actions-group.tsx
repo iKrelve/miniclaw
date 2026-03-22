@@ -152,7 +152,7 @@ function getStatus(tool: ToolAction): ToolStatus {
 function StatusDot({ status }: { status: ToolStatus }) {
   switch (status) {
     case 'running':
-      return <SpinnerGap size={14} className="shrink-0 animate-spin text-zinc-400" />
+      return <SpinnerGap size={14} className="shrink-0 animate-spin text-muted-foreground" />
     case 'success':
       return <CheckCircle size={14} className="shrink-0 text-green-500" />
     case 'error':
@@ -174,15 +174,15 @@ function ToolActionRow({ tool }: { tool: ToolAction }) {
   const label = category === 'bash' ? '' : tool.name
 
   return (
-    <div className="flex items-center gap-2 px-2 py-1 min-h-[28px] text-xs hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50 rounded-sm transition-colors">
-      {createElement(toolIcon, { size: 14, className: 'shrink-0 text-zinc-500' })}
+    <div className="flex items-center gap-2 px-2 py-1 min-h-[28px] text-xs hover:bg-muted/30 rounded-sm transition-colors">
+      {createElement(toolIcon, { size: 14, className: 'shrink-0 text-muted-foreground' })}
 
-      {label && <span className="font-medium text-zinc-500 shrink-0">{label}</span>}
+      {label && <span className="font-medium text-muted-foreground shrink-0">{label}</span>}
 
-      <span className="font-mono text-zinc-400 truncate flex-1">{summary}</span>
+      <span className="font-mono text-muted-foreground/80 truncate flex-1">{summary}</span>
 
       {filePath && (category === 'read' || category === 'write') && (
-        <span className="text-zinc-400/60 text-[11px] font-mono truncate max-w-[200px] hidden sm:inline">
+        <span className="text-muted-foreground/50 text-[11px] font-mono truncate max-w-[200px] hidden sm:inline">
           {truncatePath(filePath)}
         </span>
       )}
@@ -240,24 +240,24 @@ export function ToolActionsGroup({ tools, isStreaming = false }: ToolActionsGrou
       <button
         type="button"
         onClick={toggle}
-        className="flex w-full items-center gap-2 py-1 text-xs rounded-sm hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50 transition-colors"
+        className="flex w-full items-center gap-2 py-1 text-xs rounded-sm hover:bg-muted/30 transition-colors"
       >
         <CaretRight
           size={12}
           className={cn(
-            'shrink-0 text-zinc-400 transition-transform duration-200',
+            'shrink-0 text-muted-foreground transition-transform duration-200',
             expanded && 'rotate-90',
           )}
         />
 
-        <span className="inline-flex items-center justify-center rounded bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium leading-none text-zinc-500 tabular-nums">
+        <span className="inline-flex items-center justify-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground tabular-nums">
           {tools.length}
         </span>
 
-        <span className="text-zinc-400 truncate">{parts.join(' · ')}</span>
+        <span className="text-muted-foreground truncate">{parts.join(' · ')}</span>
 
         {runningDesc && (
-          <span className="ml-auto text-zinc-400/60 text-[11px] font-mono truncate max-w-[40%]">
+          <span className="ml-auto text-muted-foreground/50 text-[11px] font-mono truncate max-w-[40%]">
             {runningDesc}
           </span>
         )}
@@ -279,7 +279,7 @@ export function ToolActionsGroup({ tools, isStreaming = false }: ToolActionsGrou
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.12, ease: 'easeOut' }}
             >
-              <div className="ml-1.5 mt-0.5 border-l-2 border-zinc-200 dark:border-zinc-700 pl-2">
+              <div className="ml-1.5 mt-0.5 border-l-2 border-border pl-2">
                 {tools.map((tool, i) => (
                   <ToolActionRow key={tool.id || `tool-${i}`} tool={tool} />
                 ))}

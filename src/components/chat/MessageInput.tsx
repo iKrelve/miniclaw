@@ -5,8 +5,8 @@
  * provider. On selection, passes both providerId and modelId to the parent.
  */
 
-import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from 'react'
-import { Send, Square, CornerDownLeft, ChevronDown } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback, type KeyboardEvent, type ReactNode } from 'react'
+import { Send, Square, ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useSidecar } from '../../hooks/useSidecar'
 import type { ProviderModelGroup } from '../../../shared/types'
@@ -22,6 +22,8 @@ interface MessageInputProps {
   currentProviderId: string
   /** Called when user picks a different model */
   onModelChange: (providerId: string, modelId: string) => void
+  /** Optional slot rendered to the right of model selector (e.g. permission selector) */
+  extraToolbar?: ReactNode
 }
 
 // Default fallback when API is unavailable
@@ -46,6 +48,7 @@ export function MessageInput({
   currentModel,
   currentProviderId,
   onModelChange,
+  extraToolbar,
 }: MessageInputProps) {
   const [value, setValue] = useState('')
   const [focused, setFocused] = useState(false)
@@ -233,11 +236,8 @@ export function MessageInput({
               )}
             </div>
 
-            {/* Keyboard hints */}
-            <div className="flex items-center gap-1.5 text-xs text-zinc-400 dark:text-zinc-500">
-              <CornerDownLeft size={12} />
-              <span>{isStreaming ? '按 Enter 停止' : 'Enter 发送'}</span>
-            </div>
+            {/* Extra toolbar slot (permission selector etc.) */}
+            {extraToolbar}
           </div>
 
           {/* Right: send / stop button */}

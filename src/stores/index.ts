@@ -21,6 +21,7 @@ interface AppStore {
   setActiveSession: (id: string | null) => void
   addSession: (session: ChatSession) => void
   removeSession: (id: string) => void
+  updateSession: (id: string, updates: Partial<ChatSession>) => void
 
   // Messages for active session
   messages: Message[]
@@ -59,6 +60,10 @@ export const useAppStore = create<AppStore>((set) => ({
     set((state) => ({
       sessions: state.sessions.filter((s) => s.id !== id),
       activeSessionId: state.activeSessionId === id ? null : state.activeSessionId,
+    })),
+  updateSession: (id, updates) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) => (s.id === id ? { ...s, ...updates } : s)),
     })),
 
   // Messages

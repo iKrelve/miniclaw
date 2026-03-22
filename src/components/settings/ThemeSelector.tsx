@@ -1,18 +1,20 @@
 /**
  * ThemeSelector — Grid of theme cards for selection.
+ *
+ * Wrapped in SettingsCard for consistency with the new layout.
  */
 
 import { getThemes } from '../../lib/theme/loader'
 import { useTheme } from '../../hooks/useTheme'
 import { cn } from '../../lib/utils'
+import { SettingsCard } from './SettingsCard'
 
 export function ThemeSelector() {
   const { theme: activeTheme, setTheme } = useTheme()
   const themes = getThemes()
 
   return (
-    <section>
-      <h2 className="text-lg font-semibold mb-4">主题</h2>
+    <SettingsCard title="主题" description="选择你喜欢的配色方案">
       <div className="grid grid-cols-3 gap-3">
         {themes.map((t) => (
           <button
@@ -22,7 +24,7 @@ export function ThemeSelector() {
               'relative rounded-xl p-3 text-left transition-all',
               'border-2',
               activeTheme === t.id
-                ? 'border-blue-500 shadow-md'
+                ? 'border-blue-500 dark:border-blue-400 shadow-md'
                 : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700',
             )}
           >
@@ -43,13 +45,13 @@ export function ThemeSelector() {
               {t.description}
             </div>
             {activeTheme === t.id && (
-              <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center">
+              <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-blue-500 dark:bg-blue-400 flex items-center justify-center">
                 <span className="text-white text-xs">✓</span>
               </div>
             )}
           </button>
         ))}
       </div>
-    </section>
+    </SettingsCard>
   )
 }

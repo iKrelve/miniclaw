@@ -15,6 +15,7 @@ interface Message_ {
   role: string
   content: string
   created_at?: string
+  token_usage?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +106,59 @@ function pairTools(
 }
 
 // ---------------------------------------------------------------------------
+// File attachment parsing (<!--files:...-->)
+// ---------------------------------------------------------------------------
+
+interface FileAttachment {
+  id?: string
+  name: string
+  type?: string
+  size?: number
+}
+
+function parseMessageFiles(content: string): { text: string; files: FileAttachment[] } {
+  const match = content.match(/^<!--files:(.*?)-->/)
+  if (!match) return { text: content, files: [] }
+  try {
+    const files = JSON.parse(match[1]) as FileAttachment[]
+    const text = content.slice(match[0].length).trim()
+    return { text, files }
+  } catch {
+    return { text: content, files: [] }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Token usage display
+// ---------------------------------------------------------------------------
+
+interface TokenUsage {
+  input_tokens?: number
+  output_tokens?: number
+  cache_read_input_tokens?: number
+  cache_creation_input_tokens?: number
+}
+
+function TokenUsageDisplay({ raw }: { raw: string }) {
+  try {
+    const usage: TokenUsage = JSON.parse(raw)
+    const input = usage.input_tokens ?? 0
+    const output = usage.output_tokens ?? 0
+    const cache = usage.cache_read_input_tokens ?? 0
+    if (input === 0 && output === 0) return null
+    const parts = [`${input} in`, `${output} out`]
+    if (cache > 0) parts.push(`${cache} cached`)
+    return (
+      <span className="text-[10px] text-zinc-400/60 tabular-nums" title="Token usage">
+        {parts.join(' · ')}
+      </span>
+    )
+  } catch {
+    return null
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Copy button
 // ---------------------------------------------------------------------------
 
@@ -151,11 +205,16 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
   const [overflowing, setOverflowing] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
 
-  // Parse tool blocks
-  const { text, pairedTools } = useMemo(() => {
+  // Parse tool blocks + file attachments
+  const { text, pairedTools, files } = useMemo(() => {
+    if (isUser) {
+      // User messages may have <!--files:...--> prefix
+      const { text, files } = parseMessageFiles(message.content)
+      return { text, pairedTools: [] as ReturnType<typeof pairTools>, files }
+    }
     const { text, tools } = parseToolBlocks(message.content)
-    return { text, pairedTools: pairTools(tools) }
-  }, [message.content])
+    return { text, pairedTools: pairTools(tools), files: [] as FileAttachment[] }
+  }, [message.content, isUser])
 
   useEffect(() => {
     if (isUser && contentRef.current) {
@@ -181,6 +240,24 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
               isError: tool.isError,
             }))}
           />
+        )}
+
+        {/* File attachments for user messages */}
+        {isUser && files.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-1">
+            {files.map((f, i) => (
+              <span
+                key={f.id || i}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white/20 text-[11px] text-white/80"
+                title={f.name}
+              >
+                📎 {f.name}
+                {f.size != null && (
+                  <span className="text-white/50">({(f.size / 1024).toFixed(1)}KB)</span>
+                )}
+              </span>
+            ))}
+          </div>
         )}
 
         {/* Text content */}
@@ -222,11 +299,12 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
           ))}
       </MessageContent>
 
-      {/* Footer — timestamp + copy (hover to show) */}
+      {/* Footer — timestamp + token usage + copy (hover to show) */}
       <div
         className={`flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${isUser ? 'justify-end' : ''}`}
       >
         {!isUser && timestamp && <span className="text-xs text-zinc-400/60">{timestamp}</span>}
+        {!isUser && message.token_usage && <TokenUsageDisplay raw={message.token_usage} />}
         {text && <CopyButton text={text} />}
       </div>
     </Message>

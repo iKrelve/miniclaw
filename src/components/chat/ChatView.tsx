@@ -9,6 +9,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { MessageList } from './MessageList'
 import { MessageInput } from './MessageInput'
+import { ChatPermissionSelector } from './ChatPermissionSelector'
 import { ContextUsageIndicator } from './ContextUsageIndicator'
 import { FileDropZone } from './FileDropZone'
 import { useSSEStream } from '../../hooks/useSSEStream'
@@ -30,6 +31,7 @@ export function ChatView() {
     addMessage,
     addSession,
     setActiveSession,
+    updateSession,
     sessions,
   } = useAppStore()
   const { getEffectiveDir, pickDirectory } = useDirectoryPicker()
@@ -56,11 +58,27 @@ export function ChatView() {
     () => activeSession?.provider_id || localStorage.getItem(PROVIDER_STORAGE_KEY) || '',
   )
 
-  // Sync model/provider from active session when switching sessions
+  // Permission profile — session-level (default or full_access)
+  const [permissionProfile, setPermissionProfile] = useState<'default' | 'full_access'>(
+    () => activeSession?.permission_profile || 'default',
+  )
+
+  // Sync model/provider/permission from active session when switching sessions
   useEffect(() => {
     if (activeSession?.model) setCurrentModel(activeSession.model)
     if (activeSession?.provider_id) setCurrentProviderId(activeSession.provider_id)
-  }, [activeSession?.model, activeSession?.provider_id])
+    setPermissionProfile(activeSession?.permission_profile || 'default')
+  }, [activeSession?.model, activeSession?.provider_id, activeSession?.permission_profile])
+
+  const handlePermissionChange = useCallback(
+    (profile: 'default' | 'full_access') => {
+      setPermissionProfile(profile)
+      if (activeSessionId) {
+        updateSession(activeSessionId, { permission_profile: profile })
+      }
+    },
+    [activeSessionId, updateSession],
+  )
 
   const handleModelChange = useCallback(
     (providerId: string, modelId: string) => {
@@ -207,6 +225,25 @@ export function ChatView() {
     [baseUrl],
   )
 
+  // Auto-approve permission requests when in full_access mode (frontend fallback)
+  const autoApprovedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (permissionProfile !== 'full_access' || !baseUrl) return
+    for (const e of streamEvents) {
+      if (e.type !== 'permission_request') continue
+      try {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data as string) : e.data
+        const id = (data as { id: string }).id
+        if (id && !autoApprovedRef.current.has(id)) {
+          autoApprovedRef.current.add(id)
+          handlePermissionAllow(id)
+        }
+      } catch {
+        // skip malformed
+      }
+    }
+  }, [permissionProfile, streamEvents, baseUrl, handlePermissionAllow])
+
   const handleFilesDropped = useCallback(
     async (files: File[]) => {
       if (!baseUrl || !activeSessionId) return
@@ -232,19 +269,19 @@ export function ChatView() {
     [baseUrl, activeSessionId],
   )
 
-  // When stream completes, add assistant message
+  // When stream completes, reload messages from sidecar (which persists
+  // structured tool_use/tool_result blocks alongside text).
+  const wasStreamingRef = useRef(false)
   useEffect(() => {
-    if (!isStreaming && streamingText) {
-      addMessage({
-        id: `assistant-${Date.now()}`,
-        session_id: activeSessionId || '',
-        role: 'assistant',
-        content: streamingText,
-        created_at: new Date().toISOString(),
-      })
+    if (wasStreamingRef.current && !isStreaming && baseUrl && activeSessionId) {
+      fetch(`${baseUrl}/sessions/${activeSessionId}/messages`)
+        .then((res) => res.json())
+        .then((data) => setMessages(data.messages || []))
+        .catch(() => {})
       clear()
     }
-  }, [isStreaming, streamingText, addMessage, clear])
+    wasStreamingRef.current = isStreaming
+  }, [isStreaming, baseUrl, activeSessionId, setMessages, clear])
 
   // Empty state — no active session (just show input at bottom)
   if (!activeSessionId) {
@@ -263,6 +300,12 @@ export function ChatView() {
           currentModel={currentModel}
           currentProviderId={currentProviderId}
           onModelChange={handleModelChange}
+          extraToolbar={
+            <ChatPermissionSelector
+              permissionProfile={permissionProfile}
+              onPermissionChange={handlePermissionChange}
+            />
+          }
         />
         <Toaster position="bottom-right" />
       </div>
@@ -296,6 +339,13 @@ export function ChatView() {
         currentModel={currentModel}
         currentProviderId={currentProviderId}
         onModelChange={handleModelChange}
+        extraToolbar={
+          <ChatPermissionSelector
+            sessionId={activeSessionId}
+            permissionProfile={permissionProfile}
+            onPermissionChange={handlePermissionChange}
+          />
+        }
       />
       <Toaster position="bottom-right" />
     </FileDropZone>

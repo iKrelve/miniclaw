@@ -12,10 +12,15 @@ export interface StreamMessage {
     | 'text'
     | 'tool_use'
     | 'tool_result'
+    | 'tool_output'
+    | 'tool_timeout'
     | 'permission_request'
+    | 'mode_change'
+    | 'task_update'
+    | 'keep_alive'
+    | 'rewind_point'
     | 'error'
     | 'status'
-    | 'tool_output'
     | 'result'
     | 'done'
   data: unknown
@@ -152,7 +157,13 @@ export function useSSEStream(): UseSSEStreamResult {
                 case 'tool_use': {
                   try {
                     const d = JSON.parse(event.data as string)
-                    setToolUses((prev) => [...prev, { id: d.id, name: d.name, input: d.input }])
+                    // Dedup: skip if already seen (matches CodePilot)
+                    setToolUses((prev) => {
+                      if (prev.some((t) => t.id === d.id)) return prev
+                      return [...prev, { id: d.id, name: d.name, input: d.input }]
+                    })
+                    // Clear tool output for the new tool (matches CodePilot)
+                    setStreamingToolOutput('')
                   } catch {
                     // skip malformed tool_use
                   }
@@ -162,10 +173,25 @@ export function useSSEStream(): UseSSEStreamResult {
                 case 'tool_result': {
                   try {
                     const d = JSON.parse(event.data as string)
-                    setToolResults((prev) => [
-                      ...prev,
-                      { tool_use_id: d.tool_use_id, content: d.content, is_error: d.is_error },
-                    ])
+                    // Dedup: replace if same tool_use_id exists (last-wins, matches CodePilot)
+                    setToolResults((prev) => {
+                      const idx = prev.findIndex((r) => r.tool_use_id === d.tool_use_id)
+                      if (idx >= 0) {
+                        const next = [...prev]
+                        next[idx] = {
+                          tool_use_id: d.tool_use_id,
+                          content: d.content,
+                          is_error: d.is_error,
+                        }
+                        return next
+                      }
+                      return [
+                        ...prev,
+                        { tool_use_id: d.tool_use_id, content: d.content, is_error: d.is_error },
+                      ]
+                    })
+                    // Clear tool output after result (matches CodePilot)
+                    setStreamingToolOutput('')
                   } catch {
                     // skip malformed tool_result
                   }
@@ -185,7 +211,10 @@ export function useSSEStream(): UseSSEStreamResult {
                   } catch {
                     // Not JSON — raw stderr output, fall through
                   }
-                  setStreamingToolOutput((prev) => prev + (event.data as string))
+                  setStreamingToolOutput((prev) => {
+                    const next = prev + (prev ? '\n' : '') + (event.data as string)
+                    return next.length > 5000 ? next.slice(-5000) : next
+                  })
                   break
                 }
 
@@ -193,9 +222,15 @@ export function useSSEStream(): UseSSEStreamResult {
                   try {
                     const d = JSON.parse(event.data as string)
                     if (d.session_id) {
-                      setStatusText(`Connected (${d.model || 'claude'})`)
+                      // Init status — prefer requested_model over model (matches CodePilot)
+                      const modelName = d.requested_model || d.model || 'claude'
+                      setStatusText(`Connected (${modelName})`)
+                      setTimeout(() => setStatusText(''), 2000)
+                    } else if (d.notification) {
+                      // Notification-style status (matches CodePilot)
+                      setStatusText(d.message || d.title || '')
                     } else {
-                      setStatusText(event.data as string)
+                      setStatusText(typeof event.data === 'string' ? (event.data as string) : '')
                     }
                   } catch {
                     setStatusText((event.data as string) || '')
@@ -216,6 +251,46 @@ export function useSSEStream(): UseSSEStreamResult {
                   setMessages((prev) => [...prev, event])
                   break
                 }
+
+                case 'tool_timeout': {
+                  // Tool execution timed out — update status with warning
+                  try {
+                    const parsed = JSON.parse(event.data as string)
+                    const elapsed = Math.round(parsed.elapsed_time_seconds ?? 0)
+                    setStatusText(`${parsed.tool_name || 'Tool'} timed out (${elapsed}s)`)
+                  } catch {
+                    setStatusText('Tool execution timed out')
+                  }
+                  break
+                }
+
+                case 'mode_change': {
+                  // SDK permission mode changed (e.g. plan → code)
+                  try {
+                    const parsed = JSON.parse(event.data as string)
+                    setStatusText(`Mode: ${parsed.mode || event.data}`)
+                    setTimeout(() => setStatusText(''), 3000)
+                  } catch {
+                    setStatusText(`Mode: ${event.data}`)
+                    setTimeout(() => setStatusText(''), 3000)
+                  }
+                  break
+                }
+
+                case 'task_update': {
+                  // SDK TodoWrite sync — dispatch event for task panel refresh
+                  window.dispatchEvent(new CustomEvent('tasks-updated'))
+                  break
+                }
+
+                case 'keep_alive':
+                  // Heartbeat — no UI action needed
+                  break
+
+                case 'rewind_point':
+                  // SDK rewind checkpoint — forward to messages for future rewind UI
+                  setMessages((prev) => [...prev, event])
+                  break
 
                 case 'done':
                   break

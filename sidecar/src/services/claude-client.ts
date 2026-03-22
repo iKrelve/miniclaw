@@ -147,6 +147,7 @@ export interface StreamChatOptions {
   mcpServers?: Record<string, McpServerConfig>
   mode?: 'code' | 'plan' | 'ask'
   permissionMode?: string
+  permissionProfile?: 'default' | 'full_access'
   providerId?: string
   conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>
 }
@@ -193,6 +194,7 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
     mcpServers,
     mode,
     permissionMode,
+    permissionProfile,
     providerId,
   } = options
 
@@ -282,20 +284,22 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
           hasModel: !!sdkEnv.ANTHROPIC_MODEL,
         })
 
-        // Check if bypass permissions
+        // Check if bypass permissions (global setting or session-level full_access)
         const globalSkip = getSetting('dangerously_skip_permissions') === 'true'
+        const sessionBypass = permissionProfile === 'full_access'
 
         const queryOptions: Options = {
           cwd: resolvedCwd || os.homedir(),
           abortController,
           includePartialMessages: true,
-          permissionMode: globalSkip
-            ? 'bypassPermissions'
-            : (permissionMode as Options['permissionMode']) || 'acceptEdits',
+          permissionMode:
+            globalSkip || sessionBypass
+              ? 'bypassPermissions'
+              : (permissionMode as Options['permissionMode']) || 'acceptEdits',
           env: sanitizeEnv(sdkEnv),
         }
 
-        if (globalSkip) {
+        if (globalSkip || sessionBypass) {
           queryOptions.allowDangerouslySkipPermissions = true
         }
 
@@ -331,6 +335,11 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
 
         // Permission handler
         queryOptions.canUseTool = async (toolName, input, opts) => {
+          // Auto-approve when session has full_access profile
+          if (sessionBypass) {
+            return { behavior: 'allow' } as PermissionResult
+          }
+
           const permId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
           const permEvent: PermissionRequestEvent = {

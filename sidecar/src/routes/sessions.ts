@@ -14,7 +14,6 @@ import {
   archiveSession,
   getMessages,
 } from '../db'
-import { resolvePermission } from '../services/claude-client'
 
 const sessionRoutes = new Hono()
 

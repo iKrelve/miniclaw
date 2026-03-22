@@ -9,6 +9,7 @@ import {
   addMessage,
   updateSessionTitle,
   updateSessionModel,
+  updateSdkSessionId,
   acquireSessionLock,
   releaseSessionLock,
   setSessionRuntimeStatus,
@@ -94,13 +95,29 @@ chatRoutes.post('/', async (c) => {
       workingDirectory: (session.working_directory as string) || process.cwd(),
       mcpServers: mcpServers || undefined,
       mode: (mode || session.mode) as 'code' | 'plan' | 'ask',
+      permissionProfile: (session.permission_profile as 'default' | 'full_access') || 'default',
       providerId: provider_id || (session.provider_id as string) || undefined,
     })
 
     setSessionRuntimeStatus(session_id, 'running')
 
-    // Collect assistant response for DB persistence
-    let assistantText = ''
+    // Collect assistant response for DB persistence — structured contentBlocks
+    // so tool_use / tool_result survive into history (matches CodePilot format).
+    interface ContentBlock {
+      type: string
+      text?: string
+      id?: string
+      name?: string
+      input?: unknown
+      tool_use_id?: string
+      content?: string
+      is_error?: boolean
+    }
+    const contentBlocks: ContentBlock[] = []
+    let currentText = ''
+    let tokenUsage: string | null = null
+    const seenToolResultIds = new Set<string>()
+
     const transformedStream = new ReadableStream<string>({
       async start(controller) {
         logger.info('chat', 'transformedStream.start — begin reading inner stream', { session_id })
@@ -111,18 +128,89 @@ chatRoutes.post('/', async (c) => {
             if (done) {
               logger.info('chat', 'Inner stream done', {
                 session_id,
-                assistantTextLen: assistantText.length,
+                blockCount: contentBlocks.length,
+                trailingTextLen: currentText.length,
               })
               break
             }
             controller.enqueue(value)
 
-            // Parse SSE to collect text for persistence
+            // Parse SSE to collect structured content for persistence
             if (value.startsWith('data: ')) {
               try {
                 const eventData = JSON.parse(value.slice(6).trim())
                 if (eventData.type === 'text' && typeof eventData.data === 'string') {
-                  assistantText += eventData.data
+                  currentText += eventData.data
+                } else if (eventData.type === 'tool_use') {
+                  // Flush accumulated text before tool block
+                  if (currentText.trim()) {
+                    contentBlocks.push({ type: 'text', text: currentText })
+                    currentText = ''
+                  }
+                  try {
+                    const td = JSON.parse(eventData.data)
+                    contentBlocks.push({
+                      type: 'tool_use',
+                      id: td.id,
+                      name: td.name,
+                      input: td.input,
+                    })
+                  } catch {
+                    /* skip malformed */
+                  }
+                } else if (eventData.type === 'tool_result') {
+                  try {
+                    const rd = JSON.parse(eventData.data)
+                    const block: ContentBlock = {
+                      type: 'tool_result',
+                      tool_use_id: rd.tool_use_id,
+                      content: rd.content,
+                      is_error: rd.is_error || false,
+                    }
+                    // Dedup: last-wins for same tool_use_id
+                    if (seenToolResultIds.has(rd.tool_use_id)) {
+                      const idx = contentBlocks.findIndex(
+                        (b) => b.type === 'tool_result' && b.tool_use_id === rd.tool_use_id,
+                      )
+                      if (idx >= 0) contentBlocks[idx] = block
+                    } else {
+                      seenToolResultIds.add(rd.tool_use_id)
+                      contentBlocks.push(block)
+                    }
+                  } catch {
+                    /* skip malformed */
+                  }
+                } else if (eventData.type === 'result') {
+                  // Capture token usage from result event (matches CodePilot)
+                  try {
+                    const rd = JSON.parse(eventData.data)
+                    if (rd.usage) tokenUsage = JSON.stringify(rd.usage)
+                    // Capture SDK session_id for resume
+                    if (rd.session_id) {
+                      try {
+                        updateSdkSessionId(session_id, rd.session_id)
+                      } catch {
+                        /* best effort */
+                      }
+                    }
+                  } catch {
+                    /* skip malformed */
+                  }
+                } else if (eventData.type === 'status') {
+                  // Capture SDK session_id and model from init status
+                  try {
+                    const sd = JSON.parse(eventData.data)
+                    if (sd.session_id) {
+                      try {
+                        updateSdkSessionId(session_id, sd.session_id)
+                      } catch {
+                        /* best effort */
+                      }
+                    }
+                    if (sd.model) updateSessionModel(session_id, sd.model)
+                  } catch {
+                    /* skip malformed */
+                  }
                 } else if (eventData.type === 'error') {
                   logger.error('chat', 'SSE error event from inner stream', {
                     session_id,
@@ -148,10 +236,27 @@ chatRoutes.post('/', async (c) => {
           controller.error(err)
           return // skip finally double-release
         } finally {
-          // Persist assistant message
-          if (assistantText) {
+          // Flush remaining text
+          if (currentText.trim()) {
+            contentBlocks.push({ type: 'text', text: currentText })
+          }
+
+          // Persist assistant message — structured JSON if tools present, plain text otherwise
+          if (contentBlocks.length > 0) {
             try {
-              addMessage(session_id, 'assistant', assistantText)
+              const hasTools = contentBlocks.some(
+                (b) => b.type === 'tool_use' || b.type === 'tool_result',
+              )
+              const finalContent = hasTools
+                ? JSON.stringify(contentBlocks)
+                : contentBlocks
+                    .filter((b) => b.type === 'text')
+                    .map((b) => b.text)
+                    .join('')
+                    .trim()
+              if (finalContent) {
+                addMessage(session_id, 'assistant', finalContent, tokenUsage)
+              }
             } catch {
               /* best effort */
             }

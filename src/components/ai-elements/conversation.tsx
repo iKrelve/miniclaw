@@ -79,14 +79,14 @@ export const ConversationScrollButton = ({
       type="button"
       className={cn(
         'absolute bottom-4 left-[50%] -translate-x-1/2 rounded-full',
-        'border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900',
-        'p-2 shadow-md hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors',
+        'border border-border bg-background',
+        'p-2 shadow-md hover:bg-muted transition-colors',
         className,
       )}
       onClick={handle}
       {...props}
     >
-      <ArrowDown className="size-4 text-zinc-600 dark:text-zinc-300" />
+      <ArrowDown className="size-4 text-muted-foreground" />
     </button>
   )
 }
