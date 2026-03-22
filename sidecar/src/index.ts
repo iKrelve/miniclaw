@@ -41,6 +41,7 @@ app.route('/mcp', mcpRoutes);
 app.route('/skills', skillsRoutes);
 app.route('/tasks', taskRoutes);
 app.route('/workspace', workspaceRoutes);
+app.route('/terminal', terminalRoutes);
 
 async function main() {
   const port = await getAvailablePort();

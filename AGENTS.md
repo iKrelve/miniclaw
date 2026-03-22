@@ -1,0 +1,341 @@
+# AGENTS.md
+
+## Project Overview
+
+小龙虾 (MiniClaw) is a desktop AI assistant built with Tauri 2, React 19, and TypeScript. It provides a conversational AI interface powered by the Claude Code SDK (`@anthropic-ai/claude-agent-sdk`), with session management, MCP integration, file browsing, git operations, and multi-provider support.
+
+**Tech stack**: Tauri 2 (Rust) + React 19 + TypeScript 5.8 + Vite 7 + Tailwind CSS 4 + Zustand 5
+**Sidecar runtime**: Bun + Hono HTTP server + better-sqlite3
+**Package manager**: Bun (lock file: `bun.lock`)
+
+## Architecture
+
+The application is a **three-process architecture**:
+
+```
+┌─────────────────┐     IPC (invoke)     ┌─────────────────┐
+│   Tauri Shell   │◄────────────────────►│   React UI      │
+│   (Rust)        │                      │   (Renderer)    │
+│   src-tauri/    │                      │   src/          │
+└────────┬────────┘                      └────────┬────────┘
+         │ spawns & manages                       │ HTTP fetch
+         │ stdout "READY:{port}"                  │
+         ▼                                        ▼
+┌─────────────────────────────────────────────────────────┐
+│   Bun Sidecar (Hono HTTP Server)                        │
+│   sidecar/src/                                          │
+│   - Claude Code SDK streaming                           │
+│   - SQLite database (better-sqlite3)                    │
+│   - MCP server configuration                            │
+│   - File/Git/Settings/Tasks API                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Communication Flow
+
+1. **Tauri → Sidecar**: Tauri spawns the Bun sidecar as a child process via `tauri-plugin-shell`. The sidecar prints `READY:{port}` to stdout when the HTTP server is ready.
+2. **React → Tauri**: The renderer calls `invoke('get_sidecar_port')` to learn the sidecar port.
+3. **React → Sidecar**: All business logic goes through HTTP `fetch()` to `http://127.0.0.1:{port}/...`. Chat uses SSE streaming via `POST /chat`.
+
+### Directory Structure
+
+```
+/shared                    # Shared TypeScript types (used by both frontend and sidecar)
+└── types.ts               # ChatSession, Message, ApiProvider, SSEEvent, MCP, etc.
+
+/src                       # React renderer process (Tauri webview)
+├── App.tsx                # Root component (useTheme + AppShell)
+├── App.css                # Global styles (Tailwind import)
+├── main.tsx               # React entry point
+├── /components
+│   ├── /chat              # ChatView, MessageList, MessageInput
+│   ├── /layout            # AppShell (view router), Sidebar (navigation + sessions)
+│   ├── /settings          # SettingsView (providers), ThemeSelector
+│   ├── /terminal          # TerminalPanel
+│   └── /ui                # Base UI components
+├── /hooks
+│   ├── useSidecar.ts      # Sidecar port discovery + fetch helper
+│   ├── useSSEStream.ts    # SSE stream consumption for chat
+│   └── useTheme.ts        # Theme system (dark/light/system)
+├── /stores
+│   └── index.ts           # Zustand store (sidecar, sessions, messages, UI, settings)
+└── /lib
+    └── utils.ts           # cn() utility (clsx + tailwind-merge)
+
+/sidecar                   # Bun sidecar (Hono HTTP server)
+├── build.ts               # Build script (bun build --compile → Tauri binary)
+├── package.json           # Sidecar dependencies (separate from frontend)
+├── /src
+│   ├── index.ts           # Server entry point (CORS, health, route mounting)
+│   ├── /db
+│   │   └── index.ts       # SQLite database (schema, sessions, messages, settings, providers, tasks)
+│   ├── /routes
+│   │   ├── chat.ts        # POST /chat (SSE stream), POST /chat/interrupt, POST /chat/permission
+│   │   ├── sessions.ts    # CRUD for chat sessions + GET /:id/messages
+│   │   ├── providers.ts   # CRUD for API providers + POST /:id/activate
+│   │   ├── settings.ts    # Key-value settings GET/PUT
+│   │   ├── files.ts       # File tree browsing + preview
+│   │   ├── git.ts         # Git status/log/branches/commit/checkout
+│   │   ├── mcp.ts         # MCP server config listing + status
+│   │   ├── tasks.ts       # CRUD for session tasks
+│   │   ├── skills.ts      # Skills scanning from ~/.claude/commands + ~/.miniclaw/skills
+│   │   └── workspace.ts   # Workspace config files (soul.md, user.md, claude.md, memory.md)
+│   └── /services
+│       ├── claude-client.ts  # Claude Code SDK wrapper (SSE stream, permission handler, interrupt)
+│       ├── mcp-manager.ts    # MCP config loader (merges ~/.claude.json + settings + .mcp.json)
+│       └── platform.ts       # Claude binary detection + PATH expansion
+
+/src-tauri                 # Tauri 2 (Rust) main process
+├── Cargo.toml             # Rust dependencies
+├── tauri.conf.json        # Tauri config (app name, window, sidecar binary, icons)
+├── /capabilities
+│   └── default.json       # Tauri permissions (shell:allow-spawn for sidecar)
+├── /binaries
+│   └── sidecar-{triple}   # Compiled Bun sidecar binary (built by sidecar/build.ts)
+└── /src
+    ├── main.rs            # Entry point → lib::run()
+    ├── lib.rs             # Tauri Builder setup (plugins, IPC commands, tray, sidecar lifecycle)
+    └── sidecar.rs         # Sidecar process management (spawn, READY parsing, state)
+```
+
+## Development Commands
+
+| Command | Purpose |
+|---------|---------|
+| `bun run tauri dev` | **Full dev mode**: starts Vite (port 1420) + compiles Rust + launches Tauri window |
+| `bun run dev` | Vite dev server only (no Tauri, no sidecar) |
+| `cd sidecar && bun run dev` | Run sidecar standalone (for debugging API independently) |
+| `cd sidecar && bun run build` | Build sidecar to `src-tauri/binaries/sidecar-{triple}` |
+| `bun run build` | TypeScript check + Vite production build |
+| `bun run tauri build` | Full production build (Rust + sidecar + renderer → distributable app) |
+
+### Prerequisites
+
+- **Rust** — install via [rustup](https://rustup.rs/) (required for Tauri)
+- **Bun** — install via [bun.sh](https://bun.sh/) (runtime for sidecar + package manager)
+- **Claude Code CLI** — the sidecar calls the `claude` binary via the SDK; install it separately
+- macOS: Xcode Command Line Tools
+
+### First-Time Setup
+
+```bash
+cd miniclaw
+bun install                # Frontend dependencies
+cd sidecar && bun install  # Sidecar dependencies
+cd ..
+cd sidecar && bun run build  # Build sidecar binary for Tauri
+cd ..
+bun run tauri dev          # Start dev mode
+```
+
+## Key Architectural Patterns
+
+### Sidecar Communication Protocol
+
+The Tauri Rust shell spawns the sidecar and parses stdout for `READY:{port}`. The sidecar **must** print this line to stdout before any other stdout output. All diagnostic logs go to stderr (`console.error`).
+
+### SSE Chat Streaming
+
+`POST /chat` returns an SSE stream (`text/event-stream`). Events are JSON-encoded:
+
+```
+data: {"type":"text","data":"Hello"}
+data: {"type":"tool_use","data":"{...}"}
+data: {"type":"tool_result","data":"{...}"}
+data: {"type":"permission_request","data":"{...}"}
+data: {"type":"done","data":""}
+```
+
+The frontend `useSSEStream` hook accumulates `text` events into `streamingText` and stores other events in `messages[]`.
+
+### Database
+
+SQLite via `better-sqlite3` with WAL mode. Located at `~/.miniclaw/miniclaw.db`.
+
+Tables: `chat_sessions`, `messages`, `settings`, `tasks`, `api_providers`.
+
+### MCP Server Configuration
+
+Loaded from three sources (later overrides earlier):
+1. `~/.claude.json` → `mcpServers`
+2. `~/.claude/settings.json` → `mcpServers`
+3. Project `.mcp.json` → `mcpServers`
+
+Environment variable placeholders (`${KEY}`) are resolved against the DB `settings` table.
+
+### Claude Binary Detection
+
+`platform.ts` searches for the `claude` binary in standard locations (`~/.local/bin`, `~/.claude/bin`, `~/.bun/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, etc.) and caches the result. If found, it's passed as `pathToClaudeCodeExecutable` to the SDK.
+
+## Strict Code Rules (non-negotiable)
+
+- **Never add `@ts-nocheck` or `@ts-ignore`** — fix the root cause.
+- **Avoid `any`** — prefer strict typing. If unavoidable, add a comment.
+- **Must** use `cn()` from `@/lib/utils` for conditional class names — never use template literal className.
+- **Must** add brief code comments for tricky or non-obvious logic.
+- **Shared types go in `shared/types.ts`** — never duplicate types between frontend and sidecar.
+- **Sidecar stdout is reserved for the `READY:{port}` protocol** — all logging must use `console.error` (stderr).
+
+## Code Style & Conventions
+
+### File Naming
+
+| Type | Convention | Example |
+|------|-----------|---------|
+| Components | PascalCase `.tsx` | `ChatView.tsx` |
+| Hooks | `use` prefix `.ts` | `useSidecar.ts` |
+| Routes (sidecar) | kebab-case `.ts` | `chat.ts`, `mcp.ts` |
+| Services | kebab-case `.ts` | `claude-client.ts` |
+
+### TypeScript Configuration
+
+- **Renderer** (`tsconfig.json`): `bundler` module resolution, `react-jsx`, strict mode
+- **Sidecar** (`sidecar/tsconfig.json`): `bundler` module resolution, `ES2022`, `@shared/*` path alias
+- **Vite/Node** (`tsconfig.node.json`): for `vite.config.ts` only
+
+### Styling
+
+- **Tailwind CSS v4** with Vite plugin
+- Dark mode via `dark:` prefix (class-based)
+- Color scheme: `zinc` neutrals + `blue` accent
+- No CSS-in-JS, no styled-components
+
+## AI Assistant Rules
+
+### Core Principles
+
+- **Never use simplified or lazy solutions** — always use the correct, architecturally sound approach.
+- **Verify in code, do not guess** — read source code before concluding on a bug.
+- **Do not run commands automatically** unless the user explicitly requests it.
+- **Prefer mature open-source libraries** — never hand-write components that have well-established solutions.
+
+### Command Restrictions
+
+| Forbidden (Proactive) | Reason | Safe Alternative |
+|------------------------|--------|-----------------|
+| `bun run tauri build` | Slow packaging, irrelevant during dev | `bun run build` for build check |
+| Editing `dist/` or `dist-electron/` | Generated output | Edit source files |
+| Editing `node_modules/` | Overwritten on install | Fix in source |
+| Editing `src-tauri/binaries/` | Generated by sidecar build | Run `cd sidecar && bun run build` |
+| `git stash` / `git stash pop` | Risky with multiple agents | Commit WIP to a branch |
+
+### Dependency Recovery
+
+1. Run `bun install` (in both root and `sidecar/`)
+2. Re-run the exact failing command once
+3. If retry still fails, report the command and first actionable error — do not loop
+
+### Debugging Guidelines
+
+- **Sidecar not starting**: Check stderr output in terminal for `[sidecar:stderr]` lines. The Rust process logs these via `eprintln!`.
+- **Port already in use**: Run `lsof -ti:1420 | xargs kill -9` to free the Vite port, or check for orphaned sidecar processes.
+- **Claude SDK errors**: Verify `claude` binary is installed and accessible. Check `findClaudeBinary()` in `platform.ts`.
+- **Database issues**: Data lives in `~/.miniclaw/miniclaw.db`. Delete it to reset all state.
+- **Trace the call chain**: React hook → HTTP fetch → Hono route → service → database/SDK.
+
+## Critical Known Pitfalls
+
+### Tauri 2 API: No `Builder::on_event()`
+
+Tauri 2 removed `Builder::on_event()`. Use `Builder::build(context).run(closure)` pattern instead. The `App::run()` closure receives `(&AppHandle, RunEvent)`.
+
+### Rust Lifetime: MutexGuard in `if let`
+
+When using `app.state::<Mutex<T>>()` inside a `run` closure, the `MutexGuard` from `.lock()` must be dropped before the outer binding. Use `};` (semicolon after the `if let` block) or rename the inner variable to avoid shadowing.
+
+### Sidecar stdout Protocol
+
+The sidecar **must** print `READY:{port}\n` to stdout. Anything else on stdout before this line will break the Tauri startup handshake. The Rust side (`sidecar.rs`) has a 30-second timeout — if `READY` is not received, the app reports sidecar failure.
+
+### Vite Port 1420 Conflict
+
+`tauri.conf.json` hardcodes `devUrl: "http://localhost:1420"` and Vite uses `strictPort: true`. If port 1420 is already in use, `bun run tauri dev` will fail. Kill the occupying process first.
+
+### Sidecar Build for Tauri
+
+Tauri expects the sidecar binary at `src-tauri/binaries/sidecar-{target-triple}` (e.g. `sidecar-aarch64-apple-darwin`). Run `cd sidecar && bun run build` to generate it. The build script uses `rustc --print host-tuple` to determine the target triple.
+
+### Session Lock Prevents Concurrent Chat
+
+`acquireSessionLock()` uses the `runtime_status` field as a simple mutex. If the sidecar crashes mid-stream, the lock may not be released. The session will appear "busy" until `runtime_status` is manually reset to `idle` in the database.
+
+## Sidecar API Reference
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/health` | Health check |
+| POST | `/chat` | Send message, receive SSE stream |
+| POST | `/chat/interrupt` | Interrupt active stream |
+| POST | `/chat/permission` | Respond to tool permission request |
+| GET | `/sessions` | List sessions |
+| POST | `/sessions` | Create session |
+| GET | `/sessions/:id` | Get session |
+| PUT | `/sessions/:id` | Update session |
+| DELETE | `/sessions/:id` | Delete session |
+| GET | `/sessions/:id/messages` | Get messages for session |
+| GET | `/providers` | List API providers |
+| POST | `/providers` | Create provider |
+| PUT | `/providers/:id` | Update provider |
+| DELETE | `/providers/:id` | Delete provider |
+| POST | `/providers/:id/activate` | Set as default provider |
+| GET | `/settings` | Get all settings |
+| PUT | `/settings` | Bulk update settings |
+| PUT | `/settings/:key` | Update single setting |
+| GET | `/files/browse?path=...` | Browse directory tree |
+| GET | `/files/preview?path=...` | Preview file content |
+| GET | `/git/status?cwd=...` | Git status |
+| GET | `/git/log?cwd=...` | Git log |
+| GET | `/git/branches?cwd=...` | List branches |
+| POST | `/git/commit` | Stage and commit |
+| POST | `/git/checkout` | Switch branch |
+| GET | `/mcp` | List MCP server configs |
+| GET | `/mcp/status` | MCP connection status |
+| GET | `/tasks?session_id=...` | List tasks for session |
+| POST | `/tasks` | Create task |
+| PUT | `/tasks/:id` | Update task status |
+| DELETE | `/tasks/:id` | Delete task |
+| GET | `/skills` | List available skills |
+| GET | `/skills/:name` | Get skill content |
+| GET | `/workspace?path=...` | Get workspace config status |
+| POST | `/workspace/setup` | Initialize workspace config files |
+| GET | `/workspace/context?path=...` | Get workspace context for system prompt |
+
+## Tauri IPC Commands
+
+| Command | Parameters | Returns | Purpose |
+|---------|-----------|---------|---------|
+| `get_sidecar_port` | — | `u16` | Get the HTTP port of the running sidecar |
+| `get_platform` | — | `String` | Get the current OS name |
+
+## Tauri Plugins
+
+| Plugin | Purpose |
+|--------|---------|
+| `tauri-plugin-opener` | Open URLs/files with system default app |
+| `tauri-plugin-shell` | Spawn sidecar process |
+| `tauri-plugin-global-shortcut` | System-wide keyboard shortcuts |
+| `tauri-plugin-window-state` | Persist/restore window size and position |
+| `tauri-plugin-store` | Persistent key-value store (Tauri side) |
+
+## Git Workflow
+
+- Conventional Commits: `feat(chat): add streaming indicator`, `fix(sidecar): handle port conflict`
+- Group related changes in a single commit; never bundle unrelated refactors.
+- **Before committing**: ensure TypeScript compiles (`bun run build`)
+- When the user says "commit", scope to your changes only.
+
+## Self-Maintenance of AGENTS.md
+
+After completing a task, evaluate whether to update this file:
+
+| # | Question (YES → update required) | What to Update |
+|---|----------------------------------|----------------|
+| 1 | Added a new sidecar API route? | API Reference table |
+| 2 | Added a new Tauri IPC command? | Tauri IPC Commands table |
+| 3 | Added a new Tauri plugin? | Tauri Plugins table |
+| 4 | Changed the sidecar protocol? | Architecture / Known Pitfalls |
+| 5 | Added a new database table? | Database section |
+| 6 | Established a new architectural pattern? | Key Architectural Patterns |
+
+**If ALL answers are NO** → skip update.
+**Do NOT update for**: bug fixes, minor refactors, feature additions following existing patterns.

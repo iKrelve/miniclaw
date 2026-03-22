@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSidecar } from '../../hooks/useSidecar';
+import { ThemeSelector } from './ThemeSelector';
 
 interface Provider {
   id: string;
@@ -63,6 +64,9 @@ export function SettingsView() {
   return (
     <div className="flex-1 overflow-y-auto p-6 max-w-2xl mx-auto space-y-8">
       <h1 className="text-2xl font-bold">设置</h1>
+
+      {/* Theme Selection */}
+      <ThemeSelector />
 
       {/* API Providers */}
       <section>

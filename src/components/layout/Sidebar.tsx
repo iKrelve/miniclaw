@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useCallback } from 'react';
-import { Plus, MessageSquare, Settings, FolderGit2, Puzzle, Sparkles } from 'lucide-react';
+import { Plus, MessageSquare, Settings, FolderGit2, Puzzle, Sparkles, Terminal } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAppStore } from '../../stores';
 import { useSidecar } from '../../hooks/useSidecar';
@@ -52,6 +52,7 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
     { id: 'files', icon: FolderGit2, label: '文件' },
     { id: 'plugins', icon: Puzzle, label: '插件' },
     { id: 'skills', icon: Sparkles, label: '技能' },
+    { id: 'terminal', icon: Terminal, label: '终端' },
     { id: 'settings', icon: Settings, label: '设置' },
   ];
 

@@ -33,6 +33,34 @@ pub fn run() {
                     eprintln!("[sidecar] Failed to start: {}", e);
                 }
             });
+
+            // Setup system tray
+            let show_item =
+                tauri::menu::MenuItemBuilder::with_id("show", "显示小龙虾").build(app)?;
+            let quit_item = tauri::menu::MenuItemBuilder::with_id("quit", "退出").build(app)?;
+            let tray_menu = tauri::menu::MenuBuilder::new(app)
+                .items(&[&show_item, &quit_item])
+                .build()?;
+
+            let _tray = tauri::tray::TrayIconBuilder::new()
+                .tooltip("小龙虾 — AI 助手")
+                .menu(&tray_menu)
+                .on_menu_event(|app_handle: &tauri::AppHandle, event: tauri::menu::MenuEvent| {
+                    match event.id().as_ref() {
+                        "show" => {
+                            if let Some(window) = app_handle.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app_handle.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .build(app)?;
+
             Ok(())
         })
         .build(tauri::generate_context!())

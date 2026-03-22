@@ -6,16 +6,18 @@ import { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { ChatView } from '../chat/ChatView';
 import { SettingsView } from '../settings/SettingsView';
+import { TerminalPanel } from '../terminal/TerminalPanel';
 
 export function AppShell() {
   const [currentView, setCurrentView] = useState('chat');
-
   const renderContent = () => {
     switch (currentView) {
       case 'chat':
         return <ChatView />;
       case 'settings':
         return <SettingsView />;
+      case 'terminal':
+        return <TerminalPanel />;
       case 'files':
         return (
           <div className="flex-1 flex items-center justify-center text-zinc-500">
