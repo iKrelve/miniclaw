@@ -2,26 +2,11 @@
  * 小龙虾 (MiniClaw) — Zustand Store
  *
  * Central state management for the application.
+ * Types imported from shared/types.ts — single source of truth.
  */
 
 import { create } from 'zustand';
-
-interface ChatSession {
-  id: string;
-  title: string;
-  working_directory: string;
-  model: string;
-  mode: string;
-  status: string;
-  updated_at: string;
-}
-
-interface Message {
-  id: string;
-  role: string;
-  content: string;
-  created_at: string;
-}
+import type { ChatSession, Message } from '@shared/types';
 
 interface AppStore {
   // Sidecar

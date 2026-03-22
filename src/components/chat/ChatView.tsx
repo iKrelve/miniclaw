@@ -16,7 +16,7 @@ import { Toaster, toast } from '../ui/toast';
 
 export function ChatView() {
   const { baseUrl, ready } = useSidecar();
-  const { activeSessionId, messages, setMessages, addMessage, sessions } = useAppStore();
+  const { activeSessionId, messages, setMessages, addMessage, addSession, setActiveSession, sessions } = useAppStore();
   const { streamingText, isStreaming, messages: streamEvents, send, interrupt, clear } = useSSEStream();
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
@@ -34,13 +34,37 @@ export function ChatView() {
   const handleSend = useCallback(
     (content: string) => {
       if (!baseUrl || !activeSessionId) return;
-      addMessage({ id: `temp-${Date.now()}`, role: 'user', content, created_at: new Date().toISOString() });
+      addMessage({ id: `temp-${Date.now()}`, session_id: activeSessionId, role: 'user', content, created_at: new Date().toISOString() });
       send(baseUrl, activeSessionId, content, {
         model: activeSession?.model,
         mode: activeSession?.mode,
       });
     },
     [baseUrl, activeSessionId, activeSession, send, addMessage],
+  );
+
+  // Auto-create session then send — used when no session is active
+  const handleSendNew = useCallback(
+    async (content: string) => {
+      if (!baseUrl) return;
+      try {
+        const res = await fetch(`${baseUrl}/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: content.slice(0, 50), working_directory: '~' }),
+        });
+        const data = await res.json();
+        if (!data.session) return;
+        const session = data.session;
+        addSession(session);
+        setActiveSession(session.id);
+        addMessage({ id: `temp-${Date.now()}`, session_id: session.id, role: 'user', content, created_at: new Date().toISOString() });
+        send(baseUrl, session.id, content, { model: session.model, mode: session.mode });
+      } catch {
+        // session creation failed
+      }
+    },
+    [baseUrl, addSession, setActiveSession, addMessage, send],
   );
 
   const handleInterrupt = useCallback(() => {
@@ -95,19 +119,28 @@ export function ChatView() {
   // When stream completes, add assistant message
   useEffect(() => {
     if (!isStreaming && streamingText) {
-      addMessage({ id: `assistant-${Date.now()}`, role: 'assistant', content: streamingText, created_at: new Date().toISOString() });
+      addMessage({ id: `assistant-${Date.now()}`, session_id: activeSessionId || '', role: 'assistant', content: streamingText, created_at: new Date().toISOString() });
       clear();
     }
   }, [isStreaming, streamingText, addMessage, clear]);
 
   if (!activeSessionId) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="text-6xl">🦞</div>
-          <h2 className="text-2xl font-semibold text-zinc-700 dark:text-zinc-300">小龙虾</h2>
-          <p className="text-zinc-500 dark:text-zinc-400">选择一个会话或创建新对话开始</p>
+      <div className="flex-1 flex flex-col min-h-0">
+        {/* Welcome area */}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <div className="text-6xl">🦞</div>
+            <h2 className="text-2xl font-semibold text-zinc-700 dark:text-zinc-300">小龙虾</h2>
+            <p className="text-zinc-500 dark:text-zinc-400">输入消息开始新对话</p>
+          </div>
         </div>
+        {/* Input always visible */}
+        <MessageInput
+          onSend={handleSendNew}
+          isStreaming={false}
+          disabled={!ready}
+        />
         <Toaster position="bottom-right" />
       </div>
     );
