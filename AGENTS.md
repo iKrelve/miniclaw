@@ -511,7 +511,8 @@ API keys and sensitive settings are encrypted at rest in SQLite using AES-256-GC
 | Method | Path                          | Purpose                                                  |
 | ------ | ----------------------------- | -------------------------------------------------------- |
 | GET    | `/health`                     | Health check                                             |
-| POST   | `/chat`                       | Send message, receive SSE stream                         |
+| POST   | `/chat`                       | Fire-and-forget: start conversation, returns `{ ok, session_id }` |
+| GET    | `/chat/events/:id`            | SSE event stream (supports `?after=N` for reconnect replay) |
 | POST   | `/chat/interrupt`             | Interrupt active stream                                  |
 | POST   | `/chat/permission`            | Respond to tool permission request                       |
 | POST   | `/terminal`                   | Create a new terminal session (accepts `cols`, `rows`)   |

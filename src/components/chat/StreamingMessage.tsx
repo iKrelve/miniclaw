@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Message, MessageContent, MessageResponse } from '../ai-elements/message'
 import { ToolActionsGroup } from '../ai-elements/tool-actions-group'
+import { Reasoning, ReasoningTrigger, ReasoningContent } from '../ai-elements/reasoning'
 import { Shimmer } from '../ai-elements/shimmer'
 import { WidgetRenderer } from './WidgetRenderer'
 import { parseAllShowWidgets, computePartialWidgetKey } from '../../lib/widget-parser'
@@ -122,6 +123,8 @@ interface StreamingMessageProps {
   toolResults?: ToolResultInfo[]
   streamingToolOutput?: string
   statusText?: string
+  thinkingContent?: string
+  isThinking?: boolean
   onForceStop?: () => void
 }
 
@@ -276,6 +279,8 @@ export function StreamingMessage({
   toolResults = [],
   streamingToolOutput,
   statusText,
+  thinkingContent,
+  isThinking,
   onForceStop,
 }: StreamingMessageProps) {
   const runningTools = toolUses.filter(
@@ -302,6 +307,14 @@ export function StreamingMessage({
   return (
     <Message from="assistant">
       <MessageContent>
+        {/* Thinking/Reasoning content */}
+        {thinkingContent && (
+          <Reasoning isStreaming={isThinking}>
+            <ReasoningTrigger />
+            <ReasoningContent>{thinkingContent}</ReasoningContent>
+          </Reasoning>
+        )}
+
         {/* Tool calls — compact collapsible group */}
         {toolUses.length > 0 && (
           <ToolActionsGroup

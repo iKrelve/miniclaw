@@ -1,8 +1,14 @@
 /**
- * useSSEStream — SSE stream consumption hook for chat messages.
- * Connects to the sidecar's POST /chat endpoint and parses SSE events.
+ * useSSEStream — Event Bus SSE stream consumption hook.
  *
- * Separates tool_use / tool_result / status events for structured rendering.
+ * Architecture change: instead of holding a long-lived HTTP response from
+ * POST /chat, we now:
+ *   1. POST /chat (fire-and-forget) — starts the conversation in sidecar
+ *   2. GET /chat/events/:sessionId (SSE) — subscribe to buffered events
+ *
+ * The sidecar buffers all events in memory. If the SSE connection drops
+ * (e.g. App Nap, WebView throttle), the hook reconnects with ?after=N
+ * to replay missed events. The conversation itself is never interrupted.
  */
 
 import { useState, useCallback, useRef } from 'react'
@@ -10,6 +16,7 @@ import { useState, useCallback, useRef } from 'react'
 export interface StreamMessage {
   type:
     | 'text'
+    | 'thinking'
     | 'tool_use'
     | 'tool_result'
     | 'tool_output'
@@ -41,6 +48,8 @@ export interface ToolResultInfo {
 interface UseSSEStreamResult {
   messages: StreamMessage[]
   streamingText: string
+  thinkingText: string
+  isThinking: boolean
   isStreaming: boolean
   toolUses: ToolUseInfo[]
   toolResults: ToolResultInfo[]
@@ -61,23 +70,38 @@ interface UseSSEStreamResult {
   clear: () => void
 }
 
+const MAX_RECONNECT = 10
+const BASE_DELAY_MS = 1000
+
 export function useSSEStream(): UseSSEStreamResult {
   const [messages, setMessages] = useState<StreamMessage[]>([])
   const [streamingText, setStreamingText] = useState('')
+  const [thinkingText, setThinkingText] = useState('')
+  const [isThinking, setIsThinking] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
   const [toolUses, setToolUses] = useState<ToolUseInfo[]>([])
   const [toolResults, setToolResults] = useState<ToolResultInfo[]>([])
   const [statusText, setStatusText] = useState('')
   const [streamingToolOutput, setStreamingToolOutput] = useState('')
+
+  // Mutable refs for the SSE loop (text accumulation must survive reconnects)
   const abortRef = useRef<AbortController | null>(null)
+  const textRef = useRef('')
+  const thinkingRef = useRef('')
+  const lastIndexRef = useRef(-1)
 
   const clear = useCallback(() => {
     setMessages([])
     setStreamingText('')
+    setThinkingText('')
+    setIsThinking(false)
     setToolUses([])
     setToolResults([])
     setStatusText('')
     setStreamingToolOutput('')
+    textRef.current = ''
+    thinkingRef.current = ''
+    lastIndexRef.current = -1
   }, [])
 
   const send = useCallback(
@@ -87,7 +111,7 @@ export function useSSEStream(): UseSSEStreamResult {
       content: string,
       options?: { model?: string; mode?: string; providerId?: string; systemPromptAppend?: string },
     ) => {
-      // Abort previous stream
+      // Abort any previous SSE connection
       if (abortRef.current) {
         abortRef.current.abort()
       }
@@ -97,13 +121,19 @@ export function useSSEStream(): UseSSEStreamResult {
 
       setIsStreaming(true)
       setStreamingText('')
+      setThinkingText('')
+      setIsThinking(false)
       setToolUses([])
       setToolResults([])
       setStatusText('')
       setStreamingToolOutput('')
+      textRef.current = ''
+      thinkingRef.current = ''
+      lastIndexRef.current = -1
 
       try {
-        const res = await fetch(`${baseUrl}/chat`, {
+        // Step 1: Fire-and-forget POST to start the conversation
+        const postRes = await fetch(`${baseUrl}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -117,195 +147,15 @@ export function useSSEStream(): UseSSEStreamResult {
           signal: abort.signal,
         })
 
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: 'Request failed' }))
+        if (!postRes.ok) {
+          const err = await postRes.json().catch(() => ({ error: 'Request failed' }))
           setMessages((prev) => [...prev, { type: 'error', data: err.error || 'Request failed' }])
           setIsStreaming(false)
           return
         }
 
-        const reader = res.body?.getReader()
-        if (!reader) {
-          setIsStreaming(false)
-          return
-        }
-
-        const decoder = new TextDecoder()
-        let buffer = ''
-        let text = ''
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || ''
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue
-            try {
-              const event = JSON.parse(line.slice(6)) as StreamMessage
-
-              // All event.data from sidecar are JSON strings — parse each.
-              // Pattern copied from CodePilot's handleSSEEvent.
-              switch (event.type) {
-                case 'text': {
-                  text += event.data
-                  setStreamingText(text)
-                  break
-                }
-
-                case 'tool_use': {
-                  try {
-                    const d = JSON.parse(event.data as string)
-                    // Dedup: skip if already seen (matches CodePilot)
-                    setToolUses((prev) => {
-                      if (prev.some((t) => t.id === d.id)) return prev
-                      return [...prev, { id: d.id, name: d.name, input: d.input }]
-                    })
-                    // Clear tool output for the new tool (matches CodePilot)
-                    setStreamingToolOutput('')
-                  } catch {
-                    // skip malformed tool_use
-                  }
-                  break
-                }
-
-                case 'tool_result': {
-                  try {
-                    const d = JSON.parse(event.data as string)
-                    // Dedup: replace if same tool_use_id exists (last-wins, matches CodePilot)
-                    setToolResults((prev) => {
-                      const idx = prev.findIndex((r) => r.tool_use_id === d.tool_use_id)
-                      if (idx >= 0) {
-                        const next = [...prev]
-                        next[idx] = {
-                          tool_use_id: d.tool_use_id,
-                          content: d.content,
-                          is_error: d.is_error,
-                        }
-                        return next
-                      }
-                      return [
-                        ...prev,
-                        { tool_use_id: d.tool_use_id, content: d.content, is_error: d.is_error },
-                      ]
-                    })
-                    // Clear tool output after result (matches CodePilot)
-                    setStreamingToolOutput('')
-                  } catch {
-                    // skip malformed tool_result
-                  }
-                  break
-                }
-
-                case 'tool_output': {
-                  // May be JSON (_progress) or raw stderr text
-                  try {
-                    const parsed = JSON.parse(event.data as string)
-                    if (parsed._progress) {
-                      // Tool progress — update status text
-                      const elapsed = Math.round(parsed.elapsed_time_seconds ?? 0)
-                      setStatusText(`Running ${parsed.tool_name || 'tool'}... (${elapsed}s)`)
-                      break
-                    }
-                  } catch {
-                    // Not JSON — raw stderr output, fall through
-                  }
-                  setStreamingToolOutput((prev) => {
-                    const next = prev + (prev ? '\n' : '') + (event.data as string)
-                    return next.length > 5000 ? next.slice(-5000) : next
-                  })
-                  break
-                }
-
-                case 'status': {
-                  try {
-                    const d = JSON.parse(event.data as string)
-                    if (d.session_id) {
-                      // Init status — prefer requested_model over model (matches CodePilot)
-                      const modelName = d.requested_model || d.model || 'claude'
-                      setStatusText(`Connected (${modelName})`)
-                      setTimeout(() => setStatusText(''), 2000)
-                    } else if (d.notification) {
-                      // Notification-style status (matches CodePilot)
-                      setStatusText(d.message || d.title || '')
-                    } else {
-                      setStatusText(typeof event.data === 'string' ? (event.data as string) : '')
-                    }
-                  } catch {
-                    setStatusText((event.data as string) || '')
-                  }
-                  break
-                }
-
-                case 'result': {
-                  // Token usage — forward to messages for ContextUsageIndicator
-                  setMessages((prev) => [...prev, event])
-                  setStatusText('')
-                  break
-                }
-
-                case 'error': {
-                  text += '\n\n**Error:** ' + (event.data as string)
-                  setStreamingText(text)
-                  setMessages((prev) => [...prev, event])
-                  break
-                }
-
-                case 'tool_timeout': {
-                  // Tool execution timed out — update status with warning
-                  try {
-                    const parsed = JSON.parse(event.data as string)
-                    const elapsed = Math.round(parsed.elapsed_time_seconds ?? 0)
-                    setStatusText(`${parsed.tool_name || 'Tool'} timed out (${elapsed}s)`)
-                  } catch {
-                    setStatusText('Tool execution timed out')
-                  }
-                  break
-                }
-
-                case 'mode_change': {
-                  // SDK permission mode changed (e.g. plan → code)
-                  try {
-                    const parsed = JSON.parse(event.data as string)
-                    setStatusText(`Mode: ${parsed.mode || event.data}`)
-                    setTimeout(() => setStatusText(''), 3000)
-                  } catch {
-                    setStatusText(`Mode: ${event.data}`)
-                    setTimeout(() => setStatusText(''), 3000)
-                  }
-                  break
-                }
-
-                case 'task_update': {
-                  // SDK TodoWrite sync — dispatch event for task panel refresh
-                  window.dispatchEvent(new CustomEvent('tasks-updated'))
-                  break
-                }
-
-                case 'keep_alive':
-                  // Heartbeat — no UI action needed
-                  break
-
-                case 'rewind_point':
-                  // SDK rewind checkpoint — forward to messages for future rewind UI
-                  setMessages((prev) => [...prev, event])
-                  break
-
-                case 'done':
-                  break
-
-                default:
-                  setMessages((prev) => [...prev, event])
-                  break
-              }
-            } catch {
-              // ignore malformed SSE
-            }
-          }
-        }
+        // Step 2: Subscribe to SSE events with auto-reconnect
+        await subscribeWithReconnect(baseUrl, sessionId, abort)
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
           setMessages((prev) => [
@@ -320,6 +170,258 @@ export function useSSEStream(): UseSSEStreamResult {
     },
     [],
   )
+
+  /**
+   * Subscribe to GET /chat/events/:sessionId with exponential backoff reconnect.
+   * On reconnect, passes ?after=lastIndex to replay missed events.
+   */
+  async function subscribeWithReconnect(
+    baseUrl: string,
+    sessionId: string,
+    abort: AbortController,
+  ): Promise<void> {
+    let attempt = 0
+
+    while (attempt < MAX_RECONNECT && !abort.signal.aborted) {
+      try {
+        const afterParam = lastIndexRef.current >= 0 ? `?after=${lastIndexRef.current}` : ''
+        const url = `${baseUrl}/chat/events/${sessionId}${afterParam}`
+
+        const res = await fetch(url, {
+          headers: { Accept: 'text/event-stream' },
+          signal: abort.signal,
+        })
+
+        if (!res.ok || !res.body) {
+          throw new Error(`SSE connect failed: ${res.status}`)
+        }
+
+        // Reset reconnect counter on successful connection
+        attempt = 0
+
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let done = false
+
+        while (!done) {
+          const result = await reader.read()
+          if (result.done) break
+
+          buffer += decoder.decode(result.value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            try {
+              const event = JSON.parse(line.slice(6)) as {
+                type: string
+                data: unknown
+                index: number
+              }
+
+              // Track cursor for reconnect
+              if (event.index != null) {
+                lastIndexRef.current = event.index
+              }
+
+              // Dispatch event
+              done = handleEvent(event)
+              if (done) return // 'done' event — conversation complete
+            } catch {
+              // malformed SSE line
+            }
+          }
+        }
+
+        // If reader.read() returned done without a 'done' event,
+        // the connection was closed unexpectedly — reconnect
+        if (!done && !abort.signal.aborted) {
+          throw new Error('SSE connection closed unexpectedly')
+        }
+        return
+      } catch (err) {
+        if (abort.signal.aborted) return
+        if ((err as Error).name === 'AbortError') return
+
+        attempt++
+        if (attempt >= MAX_RECONNECT) {
+          setMessages((prev) => [
+            ...prev,
+            { type: 'error', data: 'Lost connection to server after multiple retries' },
+          ])
+          return
+        }
+
+        // Exponential backoff: 1s, 2s, 4s, 8s...
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1)
+        await new Promise((r) => setTimeout(r, delay))
+      }
+    }
+  }
+
+  /**
+   * Process a single SSE event. Returns true when the stream is complete ('done').
+   */
+  function handleEvent(event: { type: string; data: unknown; index: number }): boolean {
+    switch (event.type) {
+      case 'thinking': {
+        thinkingRef.current += event.data
+        setThinkingText(thinkingRef.current)
+        setIsThinking(true)
+        break
+      }
+
+      case 'text': {
+        if (thinkingRef.current) setIsThinking(false)
+        textRef.current += event.data
+        setStreamingText(textRef.current)
+        break
+      }
+
+      case 'tool_use': {
+        try {
+          const d = JSON.parse(event.data as string)
+          setToolUses((prev) => {
+            if (prev.some((t) => t.id === d.id)) return prev
+            return [...prev, { id: d.id, name: d.name, input: d.input }]
+          })
+          setStreamingToolOutput('')
+        } catch {
+          // skip malformed
+        }
+        break
+      }
+
+      case 'tool_result': {
+        try {
+          const d = JSON.parse(event.data as string)
+          setToolResults((prev) => {
+            const idx = prev.findIndex((r) => r.tool_use_id === d.tool_use_id)
+            if (idx >= 0) {
+              const next = [...prev]
+              next[idx] = {
+                tool_use_id: d.tool_use_id,
+                content: d.content,
+                is_error: d.is_error,
+              }
+              return next
+            }
+            return [
+              ...prev,
+              { tool_use_id: d.tool_use_id, content: d.content, is_error: d.is_error },
+            ]
+          })
+          setStreamingToolOutput('')
+        } catch {
+          // skip malformed
+        }
+        break
+      }
+
+      case 'tool_output': {
+        try {
+          const parsed = JSON.parse(event.data as string)
+          if (parsed._progress) {
+            const elapsed = Math.round(parsed.elapsed_time_seconds ?? 0)
+            setStatusText(`Running ${parsed.tool_name || 'tool'}... (${elapsed}s)`)
+            break
+          }
+        } catch {
+          // Not JSON — raw stderr
+        }
+        setStreamingToolOutput((prev) => {
+          const next = prev + (prev ? '\n' : '') + (event.data as string)
+          return next.length > 5000 ? next.slice(-5000) : next
+        })
+        break
+      }
+
+      case 'status': {
+        try {
+          const d = JSON.parse(event.data as string)
+          if (d.session_id) {
+            const modelName = d.requested_model || d.model || 'claude'
+            setStatusText(`Connected (${modelName})`)
+            setTimeout(() => setStatusText(''), 2000)
+          } else if (d.notification) {
+            setStatusText(d.message || d.title || '')
+          } else {
+            setStatusText(typeof event.data === 'string' ? (event.data as string) : '')
+          }
+        } catch {
+          setStatusText((event.data as string) || '')
+        }
+        break
+      }
+
+      case 'result': {
+        setMessages((prev) => [...prev, { type: 'result', data: event.data }])
+        setStatusText('')
+        break
+      }
+
+      case 'error': {
+        textRef.current += '\n\n**Error:** ' + (event.data as string)
+        setStreamingText(textRef.current)
+        setMessages((prev) => [...prev, { type: 'error', data: event.data }])
+        break
+      }
+
+      case 'permission_request': {
+        setMessages((prev) => [...prev, { type: 'permission_request', data: event.data }])
+        break
+      }
+
+      case 'tool_timeout': {
+        try {
+          const parsed = JSON.parse(event.data as string)
+          const elapsed = Math.round(parsed.elapsed_time_seconds ?? 0)
+          setStatusText(`${parsed.tool_name || 'Tool'} timed out (${elapsed}s)`)
+        } catch {
+          setStatusText('Tool execution timed out')
+        }
+        break
+      }
+
+      case 'mode_change': {
+        try {
+          const parsed = JSON.parse(event.data as string)
+          setStatusText(`Mode: ${parsed.mode || event.data}`)
+          setTimeout(() => setStatusText(''), 3000)
+        } catch {
+          setStatusText(`Mode: ${event.data}`)
+          setTimeout(() => setStatusText(''), 3000)
+        }
+        break
+      }
+
+      case 'task_update': {
+        window.dispatchEvent(new CustomEvent('tasks-updated'))
+        break
+      }
+
+      case 'keep_alive':
+        break
+
+      case 'rewind_point':
+        setMessages((prev) => [...prev, { type: 'rewind_point', data: event.data }])
+        break
+
+      case 'done':
+        return true
+
+      default:
+        setMessages((prev) => [
+          ...prev,
+          { type: event.type as StreamMessage['type'], data: event.data },
+        ])
+        break
+    }
+
+    return false
+  }
 
   const interrupt = useCallback((baseUrl: string, sessionId: string) => {
     if (abortRef.current) {
@@ -337,6 +439,8 @@ export function useSSEStream(): UseSSEStreamResult {
   return {
     messages,
     streamingText,
+    thinkingText,
+    isThinking,
     isStreaming,
     toolUses,
     toolResults,

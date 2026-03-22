@@ -18,6 +18,7 @@ import {
   CaretRight,
 } from '@phosphor-icons/react'
 import { cn } from '../../lib/utils'
+import { Button } from '../ui/button'
 import { CodeBlock } from '../ai-elements/code-block'
 
 type ToolStatus = 'running' | 'success' | 'error'
@@ -409,11 +410,11 @@ export function ToolCallBlock({
       )}
     >
       {/* Header row — click to expand */}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         onClick={() => setExpanded(!expanded)}
         className={cn(
-          'flex w-full items-center gap-2 px-3 py-1 text-left text-sm hover:bg-muted/30 rounded-none',
+          'flex w-full items-center gap-2 px-3 py-1 text-left text-sm hover:bg-muted/30 h-auto rounded-none justify-start',
           expanded && 'border-b border-border/30',
         )}
       >
@@ -433,7 +434,7 @@ export function ToolCallBlock({
           )}
           <StatusIndicator status={status} />
         </div>
-      </button>
+      </Button>
 
       {/* Expanded content — CSS grid transition */}
       <div

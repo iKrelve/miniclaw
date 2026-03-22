@@ -2,12 +2,15 @@
  * BrowserModeSelector — Toggle external Chrome browser for AI agent use.
  *
  * Three modes: off (default), headed (visible Chrome window), headless (background).
- * Calls sidecar API to start/stop Chrome. When Chrome is running, the browser_action
- * MCP tool is automatically injected into the Claude session.
+ * Calls sidecar API to start/stop Chrome. When Chrome is running, the miniclaw-browser
+ * skill is available to Claude via the miniclaw-desk CLI.
+ *
+ * Shows a status dot: green = Chrome + agent-browser ready, amber = starting,
+ * no dot = off.
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Globe, ChevronDown, Monitor, MonitorOff } from 'lucide-react'
+import { Globe, ChevronDown, Monitor, MonitorOff, Loader2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useSidecar } from '../../hooks/useSidecar'
 
@@ -19,9 +22,15 @@ interface BrowserModeSelectorProps {
 }
 
 const LABELS: Record<BrowserMode, string> = {
-  off: '浏览器关',
-  headed: '有头浏览器',
-  headless: '无头浏览器',
+  off: '关闭',
+  headed: '有头模式',
+  headless: '无头模式',
+}
+
+const ICONS: Record<BrowserMode, typeof Globe> = {
+  off: MonitorOff,
+  headed: Monitor,
+  headless: Globe,
 }
 
 export function BrowserModeSelector({ mode, onModeChange }: BrowserModeSelectorProps) {
@@ -29,6 +38,32 @@ export function BrowserModeSelector({ mode, onModeChange }: BrowserModeSelectorP
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+
+  // Status polling
+  const [toolReady, setToolReady] = useState(false)
+
+  useEffect(() => {
+    if (mode === 'off' || !baseUrl) {
+      setToolReady(false)
+      return
+    }
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const res = await fetch(`${baseUrl}/browser/status`)
+        const data = await res.json()
+        if (!cancelled) setToolReady(data.running === true && data.toolReady === true)
+      } catch {
+        if (!cancelled) setToolReady(false)
+      }
+    }
+    poll()
+    const timer = setInterval(poll, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [mode, baseUrl])
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -69,6 +104,7 @@ export function BrowserModeSelector({ mode, onModeChange }: BrowserModeSelectorP
   )
 
   const active = mode !== 'off'
+  const Icon = ICONS[mode]
 
   return (
     <div ref={ref} className="relative">
@@ -83,8 +119,17 @@ export function BrowserModeSelector({ mode, onModeChange }: BrowserModeSelectorP
             : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700',
         )}
       >
-        <Globe size={12} />
+        {loading ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />}
         <span>{loading ? '启动中...' : LABELS[mode]}</span>
+        {/* Status dot */}
+        {active && !loading && (
+          <span
+            className={cn(
+              'w-1.5 h-1.5 rounded-full',
+              toolReady ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse',
+            )}
+          />
+        )}
         <ChevronDown
           size={10}
           className={cn('transition-transform opacity-60', open && 'rotate-180')}
@@ -92,42 +137,40 @@ export function BrowserModeSelector({ mode, onModeChange }: BrowserModeSelectorP
       </button>
 
       {open && (
-        <div className="absolute left-0 bottom-full mb-1 z-50 w-40 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg overflow-hidden">
-          <button
-            onClick={() => handleSelect('off')}
-            className={cn(
-              'w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors',
-              mode === 'off' && 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
-            )}
-          >
-            <MonitorOff size={14} />
-            <span>关闭</span>
-            {mode === 'off' && <span className="ml-auto text-blue-500 text-xs">✓</span>}
-          </button>
-          <button
-            onClick={() => handleSelect('headed')}
-            className={cn(
-              'w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors',
-              mode === 'headed' &&
-                'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400',
-            )}
-          >
-            <Monitor size={14} className="text-emerald-500" />
-            <span>有头模式</span>
-            {mode === 'headed' && <span className="ml-auto text-emerald-500 text-xs">✓</span>}
-          </button>
-          <button
-            onClick={() => handleSelect('headless')}
-            className={cn(
-              'w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors',
-              mode === 'headless' &&
-                'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400',
-            )}
-          >
-            <Globe size={14} className="text-emerald-500" />
-            <span>无头模式</span>
-            {mode === 'headless' && <span className="ml-auto text-emerald-500 text-xs">✓</span>}
-          </button>
+        <div className="absolute left-0 bottom-full mb-1 z-50 w-36 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg overflow-hidden">
+          {(['off', 'headed', 'headless'] as BrowserMode[]).map((m) => {
+            const MIcon = ICONS[m]
+            const selected = mode === m
+            const isActive = m !== 'off'
+            return (
+              <button
+                key={m}
+                onClick={() => handleSelect(m)}
+                className={cn(
+                  'w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors',
+                  selected &&
+                    isActive &&
+                    'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400',
+                  selected &&
+                    !isActive &&
+                    'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
+                )}
+              >
+                <MIcon size={14} className={isActive ? 'text-emerald-500' : undefined} />
+                <span>{LABELS[m]}</span>
+                {selected && (
+                  <span
+                    className={cn(
+                      'ml-auto text-xs',
+                      isActive ? 'text-emerald-500' : 'text-blue-500',
+                    )}
+                  >
+                    ✓
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>

@@ -28,8 +28,6 @@ import type { PermissionResult } from '@anthropic-ai/claude-agent-sdk'
 import { getSetting, getProvider, updateSdkSessionId } from '../db'
 import { findClaudeBinary, getExpandedPath } from './platform'
 import { captureModels } from './sdk-capabilities'
-import { getBrowserMcpServer } from './browser-tool'
-import { chromeManager } from './chrome-manager'
 import { logger } from '../utils/logger'
 import os from 'os'
 
@@ -168,10 +166,13 @@ export function resolvePermission(permissionId: string, allow: boolean, updatedI
   const pending = pendingPermissions.get(permissionId)
   if (!pending) return
   if (allow) {
-    pending.resolve({
-      behavior: 'allow',
-      updatedInput: updatedInput as Record<string, unknown> | undefined,
-    })
+    // Only include updatedInput when it's a non-null object — Zod rejects
+    // `undefined` for Record<string, unknown> in the SDK's union schema.
+    const result: PermissionResult = { behavior: 'allow' }
+    if (updatedInput && typeof updatedInput === 'object') {
+      result.updatedInput = updatedInput as Record<string, unknown>
+    }
+    pending.resolve(result)
   } else {
     pending.resolve({ behavior: 'deny', message: 'User denied permission' })
   }
@@ -323,6 +324,10 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
               ? 'bypassPermissions'
               : (permissionMode as Options['permissionMode']) || 'acceptEdits',
           env: sanitizeEnv(sdkEnv),
+          // Load user/project/local settings so the SDK discovers skills from
+          // ~/.claude/skills/, loads CLAUDE.md, MCP servers from ~/.claude.json,
+          // and respects user permissions. Same as CodePilot.
+          settingSources: ['user', 'project', 'local'],
         }
 
         if (globalSkip || sessionBypass) {
@@ -353,18 +358,6 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
         // MCP servers
         if (mcpServers && Object.keys(mcpServers).length > 0) {
           queryOptions.mcpServers = toSdkMcpConfig(mcpServers)
-        }
-
-        // Inject browser MCP server when Chrome is running
-        if (chromeManager.isRunning()) {
-          const browserServer = getBrowserMcpServer()
-          if (browserServer) {
-            queryOptions.mcpServers = {
-              ...(queryOptions.mcpServers || {}),
-              'miniclaw-browser': browserServer,
-            }
-            logger.info('claude', 'Injected browser MCP server', { sessionId })
-          }
         }
 
         // Resume session
@@ -514,7 +507,10 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
               const evt = streamEvent.event
               if (evt.type === 'content_block_delta' && 'delta' in evt) {
                 const delta = evt.delta as Record<string, unknown>
-                if ('text' in delta && delta.text) {
+                if (delta.type === 'thinking_delta' && 'thinking' in delta && delta.thinking) {
+                  // Thinking/reasoning content from extended thinking
+                  controller.enqueue(formatSSE({ type: 'thinking', data: delta.thinking }))
+                } else if ('text' in delta && delta.text) {
                   controller.enqueue(formatSSE({ type: 'text', data: delta.text }))
                 }
               }
@@ -524,6 +520,15 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
             case 'system': {
               const sysMsg = message as SDKSystemMessage
               if ('subtype' in sysMsg && sysMsg.subtype === 'init') {
+                // Log SDK init details including skills for debugging
+                const initAny = sysMsg as Record<string, unknown>
+                logger.info('claude', 'SDK init received', {
+                  sessionId,
+                  model: sysMsg.model,
+                  toolCount: Array.isArray(sysMsg.tools) ? sysMsg.tools.length : 0,
+                  skills: initAny.skills,
+                  plugins: initAny.plugins,
+                })
                 controller.enqueue(
                   formatSSE({
                     type: 'status',

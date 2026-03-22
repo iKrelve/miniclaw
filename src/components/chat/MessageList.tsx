@@ -52,6 +52,8 @@ interface Message {
 interface MessageListProps {
   messages: Message[]
   streamingContent: string
+  thinkingContent?: string
+  isThinking?: boolean
   isStreaming: boolean
   toolUses?: ToolUseInfo[]
   toolResults?: ToolResultInfo[]
@@ -69,6 +71,8 @@ interface MessageListProps {
 export function MessageList({
   messages,
   streamingContent,
+  thinkingContent,
+  isThinking,
   isStreaming,
   toolUses = [],
   toolResults = [],
@@ -181,6 +185,8 @@ export function MessageList({
             toolResults={toolResults}
             streamingToolOutput={streamingToolOutput}
             statusText={statusText}
+            thinkingContent={thinkingContent}
+            isThinking={isThinking}
             onForceStop={onForceStop}
           />
         )}

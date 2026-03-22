@@ -38,6 +38,8 @@ export function ChatView() {
   const { getEffectiveDir, pickDirectory } = useDirectoryPicker()
   const {
     streamingText,
+    thinkingText,
+    isThinking,
     isStreaming,
     messages: streamEvents,
     toolUses,
@@ -64,14 +66,27 @@ export function ChatView() {
     () => activeSession?.permission_profile || 'default',
   )
 
-  // Browser mode — global (persisted in localStorage)
-  const [browserMode, setBrowserMode] = useState<BrowserMode>(
-    () => (localStorage.getItem('miniclaw:browser-mode') as BrowserMode) || 'off',
-  )
+  // Browser mode — synced with sidecar's actual Chrome state on startup.
+  // localStorage is only a hint; the sidecar is the source of truth.
+  const [browserMode, setBrowserMode] = useState<BrowserMode>('off')
+
+  // On mount (or when sidecar becomes ready), query actual Chrome status
+  useEffect(() => {
+    if (!baseUrl) return
+    fetch(`${baseUrl}/browser/status`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.running) {
+          setBrowserMode(data.headless ? 'headless' : 'headed')
+        } else {
+          setBrowserMode('off')
+        }
+      })
+      .catch(() => setBrowserMode('off'))
+  }, [baseUrl])
 
   const handleBrowserModeChange = useCallback((mode: BrowserMode) => {
     setBrowserMode(mode)
-    localStorage.setItem('miniclaw:browser-mode', mode)
   }, [])
 
   // Sync model/provider/permission from active session when switching sessions
@@ -333,6 +348,8 @@ export function ChatView() {
       <MessageList
         messages={messages}
         streamingContent={streamingText}
+        thinkingContent={thinkingText}
+        isThinking={isThinking}
         isStreaming={isStreaming}
         toolUses={toolUses}
         toolResults={toolResults}

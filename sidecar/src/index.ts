@@ -245,6 +245,16 @@ async function main() {
 
   logger.info('startup', 'Sidecar starting', { port, pid: process.pid })
 
+  // Run lifecycle tasks: write port file, install CLI + skills, inject PATH
+  try {
+    const { runLifecycle } = await import('./services/lifecycle')
+    runLifecycle(port)
+  } catch (err) {
+    logger.warn('startup', 'Lifecycle tasks failed (non-fatal)', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
   // Signal to Tauri that the server is ready with the port number
   // This MUST be on stdout — Tauri's sidecar manager parses it
   console.log(`READY:${port}`)
@@ -310,8 +320,14 @@ main().catch((err) => {
   process.exit(1)
 })
 
-// Cleanup browser resources on exit
+// Cleanup browser resources + port file on exit
 async function cleanup() {
+  try {
+    const { removePortFile } = await import('./services/lifecycle')
+    removePortFile()
+  } catch {
+    /* best effort */
+  }
   try {
     const { shutdownBrowserBridges } = await import('./services/browser-tool')
     await shutdownBrowserBridges()
