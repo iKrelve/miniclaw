@@ -1,19 +1,34 @@
 use tauri::AppHandle;
 use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
-use tauri_plugin_shell::process::CommandEvent;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use std::sync::Mutex;
 use std::time::Duration;
 
 /// State for the sidecar process lifecycle.
-#[derive(Default)]
+/// Holds the `CommandChild` so we can kill it on exit.
 pub struct SidecarState {
     pub port: Option<u16>,
+    child: Option<CommandChild>,
     running: bool,
 }
 
+impl Default for SidecarState {
+    fn default() -> Self {
+        Self {
+            port: None,
+            child: None,
+            running: false,
+        }
+    }
+}
+
 impl SidecarState {
+    /// Gracefully stop the sidecar — kills the child process if held.
     pub fn stop(&mut self) {
+        if let Some(child) = self.child.take() {
+            let _ = child.kill();
+        }
         self.running = false;
         self.port = None;
     }
@@ -27,9 +42,17 @@ pub async fn start_sidecar(app: &AppHandle) -> Result<(), String> {
         .sidecar("sidecar")
         .map_err(|e| format!("Failed to create sidecar command: {}", e))?;
 
-    let (mut rx, _child) = sidecar_command
+    let (mut rx, child) = sidecar_command
         .spawn()
         .map_err(|e| format!("Failed to spawn sidecar: {}", e))?;
+
+    // Store the child handle so we can kill it later
+    {
+        let state = app.state::<Mutex<SidecarState>>();
+        if let Ok(mut guard) = state.lock() {
+            guard.child = Some(child);
+        }
+    }
 
     // Wait for the READY line with a timeout
     let app_handle = app.clone();

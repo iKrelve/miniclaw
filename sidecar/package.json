@@ -18,7 +18,7 @@
     "@ai-sdk/google": "^3.0.52",
     "@ai-sdk/google-vertex": "^4.0.93",
     "@ai-sdk/amazon-bedrock": "^4.0.82",
-    "shiki": "^3.22.0",
+    "shiki": "^4.0.2",
     "nanoid": "^5.1.6"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 /**
  * TerminalPanel — Integrated terminal using xterm.js.
- * Communicates with the sidecar's terminal service via HTTP polling.
+ * Communicates with the sidecar via WebSocket for real-time I/O.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -14,12 +14,15 @@ export function TerminalPanel() {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const pollingRef = useRef<number | null>(null);
 
   // Create terminal session on mount
   useEffect(() => {
     if (!baseUrl || !ready) return;
+
+    let active = true;
+    let createdId: string | null = null;
 
     fetch(`${baseUrl}/terminal`, {
       method: 'POST',
@@ -28,14 +31,18 @@ export function TerminalPanel() {
     })
       .then((res) => res.json())
       .then((data) => {
-        if (data.id) setSessionId(data.id);
+        if (active && data.id) {
+          createdId = data.id;
+          setSessionId(data.id);
+        }
       })
       .catch((err) => console.error('[terminal] Failed to create session:', err));
 
     return () => {
+      active = false;
       // Cleanup terminal session
-      if (sessionId && baseUrl) {
-        fetch(`${baseUrl}/terminal/${sessionId}`, { method: 'DELETE' }).catch(() => {});
+      if (createdId && baseUrl) {
+        fetch(`${baseUrl}/terminal/${createdId}`, { method: 'DELETE' }).catch(() => {});
       }
     };
   }, [baseUrl, ready]);
@@ -65,7 +72,7 @@ export function TerminalPanel() {
     xtermRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
-    // Handle window resize
+    // Handle container resize
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
     });
@@ -82,44 +89,42 @@ export function TerminalPanel() {
     };
   }, []);
 
-  // Wire input to sidecar
-  useEffect(() => {
-    if (!xtermRef.current || !sessionId || !baseUrl) return;
-
-    const disposable = xtermRef.current.onData((data) => {
-      fetch(`${baseUrl}/terminal/${sessionId}/write`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data }),
-      }).catch(() => {});
-    });
-
-    return () => disposable.dispose();
-  }, [sessionId, baseUrl]);
-
-  // Poll stdout from sidecar
+  // Connect WebSocket for real-time terminal I/O
   useEffect(() => {
     if (!sessionId || !baseUrl || !xtermRef.current) return;
 
-    const poll = async () => {
-      try {
-        const res = await fetch(`${baseUrl}/terminal/${sessionId}/read`);
-        const data = await res.json();
-        if (data.data && xtermRef.current) {
-          xtermRef.current.write(data.data);
-        }
-      } catch {
-        // ignore
+    // Derive WebSocket URL from HTTP baseUrl
+    const wsUrl = baseUrl.replace(/^http/, 'ws') + `/terminal/${sessionId}/ws`;
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      if (!xtermRef.current) return;
+      if (event.data instanceof ArrayBuffer) {
+        xtermRef.current.write(new Uint8Array(event.data));
+      } else {
+        xtermRef.current.write(event.data);
       }
     };
 
-    pollingRef.current = window.setInterval(poll, 100);
+    ws.onclose = () => {
+      wsRef.current = null;
+    };
+
+    // Forward user keystrokes to sidecar via WebSocket
+    const disposable = xtermRef.current.onData((data) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
+      }
+    });
 
     return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
+      disposable.dispose();
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
       }
+      wsRef.current = null;
     };
   }, [sessionId, baseUrl]);
 

@@ -21,6 +21,7 @@ import taskRoutes from './routes/tasks';
 import workspaceRoutes from './routes/workspace';
 import terminalRoutes from './routes/terminal';
 import uploadRoutes from './routes/uploads';
+import { attachSocket, detachSocket, writeToTerminal, getTerminalSession } from './services/terminal';
 
 const app = new Hono();
 
@@ -54,7 +55,40 @@ async function main() {
   console.log(`READY:${port}`);
 
   Bun.serve({
-    fetch: app.fetch,
+    fetch(req, server) {
+      // Handle WebSocket upgrade for terminal I/O
+      const url = new URL(req.url);
+      const wsMatch = url.pathname.match(/^\/terminal\/([^/]+)\/ws$/);
+      if (wsMatch && req.headers.get('upgrade') === 'websocket') {
+        const terminalId = wsMatch[1];
+        if (!getTerminalSession(terminalId)) {
+          return new Response('Terminal session not found', { status: 404 });
+        }
+        const upgraded = server.upgrade(req, { data: { terminalId } });
+        if (!upgraded) {
+          return new Response('WebSocket upgrade failed', { status: 500 });
+        }
+        return undefined;
+      }
+      // All other requests go through Hono
+      return app.fetch(req, server);
+    },
+    websocket: {
+      open(ws) {
+        const { terminalId } = ws.data as { terminalId: string };
+        attachSocket(terminalId, ws);
+      },
+      message(ws, message) {
+        // Forward user input to the terminal process
+        const { terminalId } = ws.data as { terminalId: string };
+        const data = typeof message === 'string' ? message : new TextDecoder().decode(message);
+        writeToTerminal(terminalId, data);
+      },
+      close(ws) {
+        const { terminalId } = ws.data as { terminalId: string };
+        detachSocket(terminalId, ws);
+      },
+    },
     port,
     hostname: '127.0.0.1',
   });

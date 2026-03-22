@@ -34,8 +34,8 @@ chatRoutes.post('/', async (c) => {
     return c.json({ error: 'Session not found' }, 404);
   }
 
-  // Acquire session lock
-  const lockAcquired = acquireSessionLock(session_id, '', '', 600);
+  // Acquire session lock (atomic CAS — prevents concurrent requests)
+  const lockAcquired = acquireSessionLock(session_id);
   if (!lockAcquired) {
     return c.json({ error: 'Session is busy', code: 'SESSION_BUSY' }, 409);
   }

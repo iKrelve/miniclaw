@@ -316,13 +316,14 @@ export function deleteTask(id: string) {
 // Session Lock (prevent concurrent requests)
 // ==========================================
 
-export function acquireSessionLock(sessionId: string, lockId: string, owner: string, ttlSeconds: number): boolean {
-  // Simple lock via runtime_status field
-  const session = getSession(sessionId);
-  if (!session) return false;
-  if (session.runtime_status === 'running') return false;
-  setSessionRuntimeStatus(sessionId, 'running');
-  return true;
+export function acquireSessionLock(sessionId: string): boolean {
+  // Atomic CAS: only update if currently idle, returns true if lock acquired
+  const result = getDb()
+    .prepare(
+      "UPDATE chat_sessions SET runtime_status = 'running', updated_at = datetime('now') WHERE id = ? AND runtime_status = 'idle'"
+    )
+    .run(sessionId);
+  return result.changes > 0;
 }
 
 export function releaseSessionLock(sessionId: string) {
