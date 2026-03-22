@@ -22,7 +22,7 @@ import type {
   McpServerConfig as SdkMcpServerConfig,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerConfig, TokenUsage, PermissionRequestEvent } from '../../../shared/types';
-import { getSetting, updateSdkSessionId } from '../db';
+import { getSetting, getProvider, updateSdkSessionId } from '../db';
 import { findClaudeBinary, getExpandedPath } from './platform';
 import os from 'os';
 import fs from 'fs';
@@ -182,6 +182,7 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
     mcpServers,
     mode,
     permissionMode,
+    providerId,
   } = options;
 
   return new ReadableStream<string>({
@@ -196,6 +197,23 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
         if (!sdkEnv.USERPROFILE) sdkEnv.USERPROFILE = os.homedir();
         sdkEnv.PATH = getExpandedPath();
         delete sdkEnv.CLAUDECODE;
+
+        // Inject API proxy env vars from provider config or global settings.
+        // Priority: provider base_url/api_key > settings > process.env (already in sdkEnv)
+        if (providerId) {
+          const provider = getProvider(providerId) as Record<string, unknown> | undefined;
+          if (provider?.base_url) sdkEnv.ANTHROPIC_BASE_URL = provider.base_url as string;
+          if (provider?.api_key) sdkEnv.ANTHROPIC_AUTH_TOKEN = provider.api_key as string;
+        }
+        // Global settings fallback (user-configured via Settings UI)
+        const settingsBaseUrl = getSetting('anthropic_base_url');
+        const settingsAuthToken = getSetting('anthropic_auth_token');
+        const settingsCustomHeaders = getSetting('anthropic_custom_headers');
+        const settingsModel = getSetting('anthropic_model');
+        if (settingsBaseUrl && !sdkEnv.ANTHROPIC_BASE_URL) sdkEnv.ANTHROPIC_BASE_URL = settingsBaseUrl;
+        if (settingsAuthToken && !sdkEnv.ANTHROPIC_AUTH_TOKEN) sdkEnv.ANTHROPIC_AUTH_TOKEN = settingsAuthToken;
+        if (settingsCustomHeaders && !sdkEnv.ANTHROPIC_CUSTOM_HEADERS) sdkEnv.ANTHROPIC_CUSTOM_HEADERS = settingsCustomHeaders;
+        if (settingsModel && !model && !sdkEnv.ANTHROPIC_MODEL) sdkEnv.ANTHROPIC_MODEL = settingsModel;
 
         // Check if bypass permissions
         const globalSkip = getSetting('dangerously_skip_permissions') === 'true';

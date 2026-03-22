@@ -248,6 +248,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                   <option value="google">Google (Gemini)</option>
                   <option value="bedrock">AWS Bedrock</option>
                   <option value="vertex">Google Vertex</option>
+                  <option value="custom">Custom Proxy</option>
                 </select>
                 <input
                   type="password"

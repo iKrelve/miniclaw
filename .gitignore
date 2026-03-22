@@ -43,5 +43,8 @@ src-tauri/binaries/
 bun.lock
 sidecar/bun.lock
 
+# Local-only scripts (not committed)
+scripts/*.local.sh
+
 # OS
 Thumbs.db

@@ -45,7 +45,7 @@ export interface ApiProvider {
   created_at: string;
 }
 
-export type ProviderType = 'anthropic' | 'openai' | 'google' | 'bedrock' | 'vertex';
+export type ProviderType = 'anthropic' | 'openai' | 'google' | 'bedrock' | 'vertex' | 'custom';
 
 export interface TaskItem {
   id: string;

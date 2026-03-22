@@ -6,6 +6,32 @@
  * for the React frontend.
  */
 
+// Load local env overrides from .env.local (not committed — covered by *.local in .gitignore).
+// If scripts/refresh-env.local.sh exists (also gitignored), run it first to auto-refresh.
+import fs from 'fs';
+import pathMod from 'path';
+import { execSync } from 'child_process';
+const projectRoot = pathMod.resolve(import.meta.dir, '../..');
+const envLocalPath = pathMod.join(projectRoot, '.env.local');
+const refreshScript = pathMod.join(projectRoot, 'scripts', 'refresh-env.local.sh');
+if (fs.existsSync(refreshScript)) {
+  try {
+    execSync(`bash "${refreshScript}"`, { timeout: 20000, stdio: 'pipe' });
+  } catch { /* non-fatal — .env.local may still exist from previous run */ }
+}
+if (fs.existsSync(envLocalPath)) {
+  for (const line of fs.readFileSync(envLocalPath, 'utf-8').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq < 1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1).trim();
+    if (!process.env[key]) process.env[key] = value;
+  }
+  console.error('[sidecar] Loaded .env.local');
+}
+
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { getAvailablePort } from './utils/port';

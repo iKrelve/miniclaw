@@ -51,7 +51,7 @@ pub async fn start_sidecar(app: &AppHandle) -> Result<(), String> {
         let state = app.state::<Mutex<SidecarState>>();
         if let Ok(mut guard) = state.lock() {
             guard.child = Some(child);
-        }
+        };
     }
 
     // Wait for the READY line with a timeout

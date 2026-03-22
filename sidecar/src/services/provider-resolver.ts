@@ -42,6 +42,11 @@ const MODEL_CATALOG: Record<string, CatalogModel[]> = {
   vertex: [
     { id: 'claude-sonnet-4@20250514', name: 'Claude Sonnet 4 (Vertex)', contextWindow: 200000, provider: 'vertex' },
   ],
+  // Custom proxy: user types model name directly; these are common examples
+  custom: [
+    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', contextWindow: 200000, provider: 'custom' },
+    { id: 'deepseek-chat', name: 'DeepSeek Chat', contextWindow: 128000, provider: 'custom' },
+  ],
 };
 
 export function getModelsForProvider(providerType: string): CatalogModel[] {
@@ -99,12 +104,15 @@ export function resolveProvider(opts: ResolveOptions = {}): ResolvedProvider {
 
   const providerType = (provider?.type as string) || 'anthropic';
   const models = getModelsForProvider(providerType);
-  const effectiveModel = opts.model || opts.sessionModel || getSetting('default_model') || models[0]?.id;
+  const effectiveModel = opts.model || opts.sessionModel || getSetting('default_model') || getSetting('anthropic_model') || models[0]?.id;
+
+  // Check credentials: provider api_key OR global proxy auth token
+  const hasCredentials = !!(provider?.api_key) || !!getSetting('anthropic_auth_token');
 
   return {
     provider,
     model: effectiveModel,
     models,
-    hasCredentials: !!(provider?.api_key),
+    hasCredentials,
   };
 }
