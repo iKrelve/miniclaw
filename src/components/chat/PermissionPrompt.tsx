@@ -6,7 +6,7 @@
  * - Tool input preview
  */
 
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { Shield, Check, X } from 'lucide-react'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
@@ -190,7 +190,7 @@ export function PermissionPrompt({
       <div className="my-3 rounded-xl border border-border overflow-hidden px-4 py-3">
         <AskUserQuestionUI
           input={inp}
-          onAllow={(id) => {
+          onAllow={() => {
             setResolved('allow')
             onAllow(request.id)
           }}

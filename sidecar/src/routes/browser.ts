@@ -4,6 +4,7 @@
 
 import { Hono } from 'hono'
 import { chromeManager } from '../services/chrome-manager'
+import { shutdownBrowserBridges } from '../services/browser-tool'
 import { logger } from '../utils/logger'
 
 const browserRoutes = new Hono()
@@ -32,6 +33,8 @@ browserRoutes.post('/start', async (c) => {
  */
 browserRoutes.post('/stop', async (c) => {
   logger.info('browser', 'POST /browser/stop')
+  // Shutdown all agent-browser daemons first, then Chrome
+  await shutdownBrowserBridges()
   await chromeManager.shutdown()
   return c.json({ success: true })
 })

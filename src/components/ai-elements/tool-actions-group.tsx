@@ -3,20 +3,9 @@
  * Shows a summary header with counts, and expands to show individual tool rows.
  */
 
-import { useState, createElement } from 'react'
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import type { Icon } from '@phosphor-icons/react'
-import {
-  File,
-  NotePencil,
-  Terminal,
-  MagnifyingGlass,
-  Wrench,
-  SpinnerGap,
-  CheckCircle,
-  XCircle,
-  CaretRight,
-} from '@phosphor-icons/react'
+import { CaretRight } from '@phosphor-icons/react'
 import { cn } from '../../lib/utils'
 import { ToolCallBlock } from '../chat/ToolCallBlock'
 
@@ -80,21 +69,6 @@ function getToolCategory(name: string): ToolCategory {
   return 'other'
 }
 
-function getToolIcon(category: ToolCategory): Icon {
-  switch (category) {
-    case 'read':
-      return File
-    case 'write':
-      return NotePencil
-    case 'bash':
-      return Terminal
-    case 'search':
-      return MagnifyingGlass
-    case 'other':
-      return Wrench
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Summary helpers
 // ---------------------------------------------------------------------------
@@ -126,71 +100,6 @@ function getToolSummary(name: string, input: unknown, category: ToolCategory): s
     default:
       return name
   }
-}
-
-function getFilePath(input: unknown): string {
-  const inp = input as Record<string, unknown> | undefined
-  if (!inp) return ''
-  return (inp.file_path || inp.path || inp.filePath || '') as string
-}
-
-function truncatePath(path: string, maxLen = 50): string {
-  if (path.length <= maxLen) return path
-  return '...' + path.slice(path.length - maxLen + 3)
-}
-
-// ---------------------------------------------------------------------------
-// Status indicator
-// ---------------------------------------------------------------------------
-
-type ToolStatus = 'running' | 'success' | 'error'
-
-function getStatus(tool: ToolAction): ToolStatus {
-  if (tool.result === undefined) return 'running'
-  return tool.isError ? 'error' : 'success'
-}
-
-function StatusDot({ status }: { status: ToolStatus }) {
-  switch (status) {
-    case 'running':
-      return <SpinnerGap size={14} className="shrink-0 animate-spin text-muted-foreground/50" />
-    case 'success':
-      return <CheckCircle size={14} className="shrink-0 text-status-success-foreground" />
-    case 'error':
-      return <XCircle size={14} className="shrink-0 text-status-error-foreground" />
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Compact row for a single tool action
-// ---------------------------------------------------------------------------
-
-function ToolActionRow({ tool }: { tool: ToolAction }) {
-  const category = getToolCategory(tool.name)
-  const toolIcon = getToolIcon(category)
-  const summary = getToolSummary(tool.name, tool.input, category)
-  const filePath = getFilePath(tool.input)
-  const status = getStatus(tool)
-
-  const label = category === 'bash' ? '' : tool.name
-
-  return (
-    <div className="flex items-center gap-2 px-2 py-1 min-h-[28px] text-xs hover:bg-muted/30 rounded-sm transition-colors">
-      {createElement(toolIcon, { size: 14, className: 'shrink-0 text-muted-foreground' })}
-
-      {label && <span className="font-medium text-muted-foreground shrink-0">{label}</span>}
-
-      <span className="font-mono text-muted-foreground/60 truncate flex-1">{summary}</span>
-
-      {filePath && (category === 'read' || category === 'write') && (
-        <span className="text-muted-foreground/40 text-[11px] font-mono truncate max-w-[200px] hidden sm:inline">
-          {truncatePath(filePath)}
-        </span>
-      )}
-
-      <StatusDot status={status} />
-    </div>
-  )
 }
 
 // ---------------------------------------------------------------------------

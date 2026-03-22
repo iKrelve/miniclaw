@@ -309,3 +309,22 @@ main().catch((err) => {
   console.error('[sidecar] Fatal error:', err)
   process.exit(1)
 })
+
+// Cleanup browser resources on exit
+async function cleanup() {
+  try {
+    const { shutdownBrowserBridges } = await import('./services/browser-tool')
+    await shutdownBrowserBridges()
+    const { chromeManager } = await import('./services/chrome-manager')
+    await chromeManager.shutdown()
+  } catch {
+    /* best effort */
+  }
+}
+
+process.on('SIGTERM', () => {
+  cleanup().finally(() => process.exit(0))
+})
+process.on('SIGINT', () => {
+  cleanup().finally(() => process.exit(0))
+})

@@ -5,7 +5,7 @@
  */
 
 import { createElement, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { BundledLanguage, BundledTheme, ThemedToken } from 'shiki'
+import type { BundledLanguage, BundledTheme, HighlighterGeneric, ThemedToken } from 'shiki'
 import { bundledLanguages, createHighlighter } from 'shiki'
 import type { Icon } from '@phosphor-icons/react'
 import {
@@ -50,10 +50,9 @@ interface TokenizedCode {
   bg: string
 }
 
-const highlighterCache = new Map<
-  string,
-  Promise<ReturnType<typeof createHighlighter> extends Promise<infer T> ? T : never>
->()
+type Highlighter = HighlighterGeneric<BundledLanguage, BundledTheme>
+
+const highlighterCache = new Map<string, Promise<Highlighter>>()
 const tokensCache = new Map<string, TokenizedCode>()
 const subscribers = new Map<string, Set<(result: TokenizedCode) => void>>()
 
@@ -66,14 +65,14 @@ function getTokensCacheKey(code: string, language: string): string {
   return `${language}:${code.length}:${start}:${end}`
 }
 
-function getHighlighter(language: BundledLanguage) {
+function getHighlighter(language: BundledLanguage): Promise<Highlighter> {
   const safeLang = isBundledLanguage(language) ? language : ('text' as BundledLanguage)
   const cacheKey = `${safeLang}:${LIGHT_THEME}:${DARK_THEME}`
 
   const cached = highlighterCache.get(cacheKey)
   if (cached) return cached
 
-  const promise = createHighlighter({
+  const promise: Promise<Highlighter> = createHighlighter({
     langs: [safeLang],
     themes: [LIGHT_THEME, DARK_THEME],
   }).catch(() => {
