@@ -16,6 +16,7 @@ import {
   getSetting,
 } from '../db'
 import { loadMcpServers } from '../services/mcp-manager'
+import type { McpServerConfig } from '../../../shared/types'
 import { logger } from '../utils/logger'
 
 const chatRoutes = new Hono()
@@ -25,7 +26,7 @@ const chatRoutes = new Hono()
  */
 chatRoutes.post('/', async (c) => {
   const body = await c.req.json()
-  const { session_id, content, model, mode, provider_id, files } = body
+  const { session_id, content, model, mode, provider_id, files, systemPromptAppend } = body
 
   logger.info('chat', 'POST /chat request', {
     session_id,
@@ -75,6 +76,11 @@ chatRoutes.post('/', async (c) => {
 
     // Build system prompt from workspace config (if any)
     let systemPrompt = (session.system_prompt as string) || undefined
+
+    // Append per-request system prompt (e.g. skill injection from slash commands)
+    if (systemPromptAppend) {
+      systemPrompt = (systemPrompt || '') + '\n\n' + systemPromptAppend
+    }
 
     logger.info('chat', 'Creating SSE stream', {
       session_id,

@@ -54,6 +54,7 @@ interface UseSSEStreamResult {
       model?: string
       mode?: string
       providerId?: string
+      systemPromptAppend?: string
     },
   ) => void
   interrupt: (baseUrl: string, sessionId: string) => void
@@ -84,7 +85,7 @@ export function useSSEStream(): UseSSEStreamResult {
       baseUrl: string,
       sessionId: string,
       content: string,
-      options?: { model?: string; mode?: string; providerId?: string },
+      options?: { model?: string; mode?: string; providerId?: string; systemPromptAppend?: string },
     ) => {
       // Abort previous stream
       if (abortRef.current) {
@@ -111,6 +112,7 @@ export function useSSEStream(): UseSSEStreamResult {
             model: options?.model,
             mode: options?.mode,
             provider_id: options?.providerId,
+            systemPromptAppend: options?.systemPromptAppend,
           }),
           signal: abort.signal,
         })

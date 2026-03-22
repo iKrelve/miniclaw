@@ -121,9 +121,18 @@ export interface McpServerConfig {
   env?: Record<string, string>
   url?: string
   headers?: Record<string, string>
+  enabled?: boolean
+  description?: string
 }
 
-export type McpStatus = 'connected' | 'disconnected' | 'connecting' | 'error'
+export type McpStatus =
+  | 'connected'
+  | 'disconnected'
+  | 'connecting'
+  | 'error'
+  | 'configured'
+  | 'disabled'
+  | 'failed'
 
 export interface McpServerInfo {
   name: string
@@ -164,6 +173,18 @@ export interface SettingsMap {
 // Skills
 // ==========================================
 
+export type SkillKind = 'slash_command' | 'agent_skill'
+
+export interface SkillFile {
+  name: string
+  description: string
+  content: string
+  source: 'global' | 'project' | 'installed'
+  kind: SkillKind
+  installedSource?: 'agents' | 'claude'
+  filePath: string
+}
+
 export interface SkillInfo {
   name: string
   description: string
@@ -183,6 +204,7 @@ export interface SendMessageRequest {
   mode?: 'code' | 'plan' | 'ask'
   provider_id?: string
   files?: FileAttachment[]
+  systemPromptAppend?: string
 }
 
 export interface FileAttachment {

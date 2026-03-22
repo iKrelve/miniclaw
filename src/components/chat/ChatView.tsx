@@ -117,7 +117,7 @@ export function ChatView() {
   }, [baseUrl, activeSessionId, setMessages, clear])
 
   const handleSend = useCallback(
-    (content: string) => {
+    (content: string, opts?: { systemPromptAppend?: string }) => {
       if (!baseUrl || !activeSessionId) return
       addMessage({
         id: `temp-${Date.now()}`,
@@ -130,6 +130,7 @@ export function ChatView() {
         model: currentModel,
         mode: activeSession?.mode,
         providerId: currentProviderId,
+        systemPromptAppend: opts?.systemPromptAppend,
       })
     },
     [baseUrl, activeSessionId, activeSession, send, addMessage, currentModel, currentProviderId],
@@ -137,7 +138,7 @@ export function ChatView() {
 
   // Auto-create session then send — used when no session is active
   const handleSendNew = useCallback(
-    async (content: string) => {
+    async (content: string, opts?: { systemPromptAppend?: string }) => {
       if (!baseUrl) return
 
       // Resolve working directory: cached -> picker -> abort
@@ -178,6 +179,7 @@ export function ChatView() {
           model: currentModel,
           mode: session.mode,
           providerId: currentProviderId,
+          systemPromptAppend: opts?.systemPromptAppend,
         })
       } catch (err) {
         toast(err instanceof Error ? err.message : '创建会话失败')

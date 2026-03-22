@@ -6,13 +6,14 @@
  */
 
 import { useState, useRef, useEffect, useCallback, type KeyboardEvent, type ReactNode } from 'react'
-import { Send, Square, ChevronDown } from 'lucide-react'
+import { Send, Square, ChevronDown, X, Sparkles } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useSidecar } from '../../hooks/useSidecar'
 import type { ProviderModelGroup } from '../../../shared/types'
+import { SlashCommandPopover, type SelectedSkill } from './SlashCommandPopover'
 
 interface MessageInputProps {
-  onSend: (content: string) => void
+  onSend: (content: string, opts?: { systemPromptAppend?: string }) => void
   onInterrupt?: () => void
   isStreaming: boolean
   disabled?: boolean
@@ -53,6 +54,11 @@ export function MessageInput({
   const [value, setValue] = useState('')
   const [focused, setFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Slash command state
+  const [slashVisible, setSlashVisible] = useState(false)
+  const [slashQuery, setSlashQuery] = useState('')
+  const [selectedSkill, setSelectedSkill] = useState<SelectedSkill | null>(null)
 
   // Model dropdown state
   const { baseUrl } = useSidecar()
@@ -110,14 +116,20 @@ export function MessageInput({
   const handleSend = () => {
     const trimmed = value.trim()
     if (!trimmed || disabled) return
-    onSend(trimmed)
+    const opts = selectedSkill?.content ? { systemPromptAppend: selectedSkill.content } : undefined
+    onSend(trimmed, opts)
     setValue('')
+    setSelectedSkill(null)
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Let slash popover handle navigation keys
+    if (slashVisible && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'].includes(e.key)) {
+      return // SlashCommandPopover handles these via window listener
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       if (isStreaming) {
@@ -134,6 +146,26 @@ export function MessageInput({
       el.style.height = 'auto'
       el.style.height = `${Math.min(el.scrollHeight, 240)}px`
     }
+  }
+
+  // Detect "/" at the start of input to trigger slash popover
+  const handleValueChange = (newVal: string) => {
+    setValue(newVal)
+    if (newVal.startsWith('/')) {
+      setSlashVisible(true)
+      setSlashQuery(newVal.slice(1))
+    } else {
+      setSlashVisible(false)
+      setSlashQuery('')
+    }
+  }
+
+  const handleSlashSelect = (skill: SelectedSkill) => {
+    setSelectedSkill(skill)
+    setValue('') // Clear the slash command text
+    setSlashVisible(false)
+    setSlashQuery('')
+    textareaRef.current?.focus()
   }
 
   const handleModelSelect = (providerId: string, modelId: string) => {
@@ -159,16 +191,41 @@ export function MessageInput({
             : 'border-zinc-200 dark:border-zinc-700',
         )}
       >
+        {/* Slash command popover */}
+        <SlashCommandPopover
+          query={slashQuery}
+          onSelect={handleSlashSelect}
+          onClose={() => setSlashVisible(false)}
+          visible={slashVisible}
+        />
+
+        {/* Skill badge */}
+        {selectedSkill && (
+          <div className="flex items-center gap-1.5 px-4 pt-3 pb-1">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+              <Sparkles size={10} />/{selectedSkill.name}
+              <button
+                onClick={() => setSelectedSkill(null)}
+                className="ml-0.5 hover:text-amber-900 dark:hover:text-amber-100"
+              >
+                <X size={10} />
+              </button>
+            </span>
+          </div>
+        )}
+
         {/* Textarea area */}
         <textarea
           ref={textareaRef}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => handleValueChange(e.target.value)}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder="给小龙虾发送消息..."
+          placeholder={
+            selectedSkill ? `使用 /${selectedSkill.name} 技能发送消息...` : '给小龙虾发送消息...'
+          }
           disabled={disabled}
           rows={3}
           className={cn(
