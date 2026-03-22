@@ -41,9 +41,9 @@ pub fn run() {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 // Gracefully stop sidecar on exit
                 let state = app.state::<Mutex<SidecarState>>();
-                if let Ok(mut state) = state.lock() {
-                    state.stop();
-                }
+                if let Ok(mut guard) = state.lock() {
+                    guard.stop();
+                };
             }
         });
 }
