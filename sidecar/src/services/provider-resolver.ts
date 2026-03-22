@@ -20,29 +20,10 @@ export interface CatalogModel {
 
 const MODEL_CATALOG: Record<string, CatalogModel[]> = {
   anthropic: [
-    // Semantic shorthand names — used by Claude Code SDK and compatible proxies
-    { id: 'sonnet', name: 'Claude Sonnet 4', contextWindow: 200000, provider: 'anthropic' },
-    { id: 'opus', name: 'Claude Opus 4', contextWindow: 200000, provider: 'anthropic' },
-    { id: 'haiku', name: 'Claude Haiku 3.5', contextWindow: 200000, provider: 'anthropic' },
-    // Full model IDs — used when calling the Anthropic API directly
-    {
-      id: 'claude-sonnet-4-20250514',
-      name: 'Claude Sonnet 4 (full ID)',
-      contextWindow: 200000,
-      provider: 'anthropic',
-    },
-    {
-      id: 'claude-opus-4-20250514',
-      name: 'Claude Opus 4 (full ID)',
-      contextWindow: 200000,
-      provider: 'anthropic',
-    },
-    {
-      id: 'claude-3-5-haiku-20241022',
-      name: 'Claude 3.5 Haiku (full ID)',
-      contextWindow: 200000,
-      provider: 'anthropic',
-    },
+    // SDK shorthand names — used by Claude Code SDK and compatible proxies
+    { id: 'sonnet', name: 'Sonnet 4', contextWindow: 200000, provider: 'anthropic' },
+    { id: 'opus', name: 'Opus 4', contextWindow: 200000, provider: 'anthropic' },
+    { id: 'haiku', name: 'Haiku 3.5', contextWindow: 200000, provider: 'anthropic' },
   ],
   openai: [
     { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, provider: 'openai' },
@@ -87,16 +68,8 @@ const MODEL_CATALOG: Record<string, CatalogModel[]> = {
       provider: 'vertex',
     },
   ],
-  // Custom provider — user types model name directly
-  custom: [
-    {
-      id: 'claude-sonnet-4-20250514',
-      name: 'Claude Sonnet 4',
-      contextWindow: 200000,
-      provider: 'custom',
-    },
-    { id: 'deepseek-chat', name: 'DeepSeek Chat', contextWindow: 128000, provider: 'custom' },
-  ],
+  // Custom provider — empty by default, user types model name directly
+  custom: [],
 }
 
 export function getModelsForProvider(providerType: string): CatalogModel[] {

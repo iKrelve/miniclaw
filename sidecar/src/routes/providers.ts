@@ -45,14 +45,15 @@ providerRoutes.get('/models', (c) => {
   const groups: ProviderModelGroup[] = []
 
   // 1) Built-in "env" group — always present (Claude Code SDK default path)
+  //    Uses SDK shorthand names as values (sonnet/opus/haiku)
   groups.push({
     provider_id: 'env',
     provider_name: 'Claude Code',
     provider_type: 'anthropic',
     models: [
-      { value: 'sonnet', label: 'Claude Sonnet 4' },
-      { value: 'opus', label: 'Claude Opus 4' },
-      { value: 'haiku', label: 'Claude Haiku 3.5' },
+      { value: 'sonnet', label: 'Sonnet 4' },
+      { value: 'opus', label: 'Opus 4' },
+      { value: 'haiku', label: 'Haiku 3.5' },
     ],
   })
 
