@@ -1,8 +1,5 @@
 /**
- * ChatView — Main chat interface combining message list and input
- *
- * When no session is active, the input is still shown — sending a message
- * auto-creates a new session (matching CodePilot's UX).
+ * ChatView — Main chat interface combining message list, input, and model selector.
  */
 
 import { useEffect, useCallback } from 'react';
@@ -11,10 +8,11 @@ import { MessageInput } from './MessageInput';
 import { useSSEStream } from '../../hooks/useSSEStream';
 import { useAppStore } from '../../stores';
 import { useSidecar } from '../../hooks/useSidecar';
+import { Toaster, toast } from '../ui/toast';
 
 export function ChatView() {
   const { baseUrl, ready } = useSidecar();
-  const { activeSessionId, messages, setMessages, addMessage, addSession, setActiveSession, sessions } = useAppStore();
+  const { activeSessionId, messages, setMessages, addMessage, sessions } = useAppStore();
   const { streamingText, isStreaming, messages: streamEvents, send, interrupt, clear } = useSSEStream();
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
@@ -33,7 +31,6 @@ export function ChatView() {
     (content: string) => {
       if (!baseUrl || !activeSessionId) return;
 
-      // Optimistically add user message
       addMessage({
         id: `temp-${Date.now()}`,
         role: 'user',
@@ -49,50 +46,35 @@ export function ChatView() {
     [baseUrl, activeSessionId, activeSession, send, addMessage],
   );
 
-  // Auto-create session then send — used when no session is active
-  const handleSendNew = useCallback(
-    async (content: string) => {
-      if (!baseUrl) return;
-
-      try {
-        const res = await fetch(`${baseUrl}/sessions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: content.slice(0, 50),
-            working_directory: '~',
-          }),
-        });
-        const data = await res.json();
-        if (!data.session) return;
-
-        const session = data.session;
-        addSession(session);
-        setActiveSession(session.id);
-
-        // Optimistically add user message
-        addMessage({
-          id: `temp-${Date.now()}`,
-          role: 'user',
-          content,
-          created_at: new Date().toISOString(),
-        });
-
-        send(baseUrl, session.id, content, {
-          model: session.model,
-          mode: session.mode,
-        });
-      } catch {
-        // session creation failed — silently ignore
-      }
-    },
-    [baseUrl, addSession, setActiveSession, addMessage, send],
-  );
-
   const handleInterrupt = useCallback(() => {
     if (!baseUrl || !activeSessionId) return;
     interrupt(baseUrl, activeSessionId);
   }, [baseUrl, activeSessionId, interrupt]);
+
+  // Permission handlers
+  const handlePermissionAllow = useCallback(
+    (permissionId: string) => {
+      if (!baseUrl) return;
+      fetch(`${baseUrl}/chat/permission`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permission_id: permissionId, allow: true }),
+      }).catch(() => toast('权限响应发送失败'));
+    },
+    [baseUrl],
+  );
+
+  const handlePermissionDeny = useCallback(
+    (permissionId: string) => {
+      if (!baseUrl) return;
+      fetch(`${baseUrl}/chat/permission`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permission_id: permissionId, allow: false }),
+      }).catch(() => toast('权限响应发送失败'));
+    },
+    [baseUrl],
+  );
 
   // When stream completes, add assistant message to local state
   useEffect(() => {
@@ -109,34 +91,38 @@ export function ChatView() {
 
   if (!activeSessionId) {
     return (
-      <div className="flex-1 flex flex-col min-h-0">
-        {/* Welcome area */}
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <div className="text-6xl">🦞</div>
-            <h2 className="text-2xl font-semibold text-zinc-700 dark:text-zinc-300">小龙虾</h2>
-            <p className="text-zinc-500 dark:text-zinc-400">
-              输入消息开始新对话
-            </p>
-          </div>
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="text-6xl">🦞</div>
+          <h2 className="text-2xl font-semibold text-zinc-700 dark:text-zinc-300">小龙虾</h2>
+          <p className="text-zinc-500 dark:text-zinc-400">选择一个会话或创建新对话开始</p>
         </div>
-        {/* Input always visible */}
-        <MessageInput
-          onSend={handleSendNew}
-          isStreaming={false}
-          disabled={!ready}
-        />
+        <Toaster position="bottom-right" />
       </div>
     );
   }
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
+      {/* Session header */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
+          {activeSession?.title || 'New Chat'}
+        </div>
+        {activeSession?.model && (
+          <span className="text-xs text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
+            {activeSession.model}
+          </span>
+        )}
+      </div>
+
       <MessageList
         messages={messages}
         streamingText={streamingText}
         streamEvents={streamEvents}
         isStreaming={isStreaming}
+        onPermissionAllow={handlePermissionAllow}
+        onPermissionDeny={handlePermissionDeny}
       />
       <MessageInput
         onSend={handleSend}
@@ -144,6 +130,7 @@ export function ChatView() {
         isStreaming={isStreaming}
         disabled={!ready}
       />
+      <Toaster position="bottom-right" />
     </div>
   );
 }

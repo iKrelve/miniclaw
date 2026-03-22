@@ -11,6 +11,7 @@ import {
   deleteProvider,
   activateProvider,
 } from '../db';
+import { getModelsForProvider, getAllModels } from '../services/provider-resolver';
 
 const providerRoutes = new Hono();
 
@@ -72,6 +73,15 @@ providerRoutes.post('/:id/activate', (c) => {
   }
   activateProvider(id);
   return c.json({ success: true });
+});
+
+/** GET /providers/models?type=... — Get available models */
+providerRoutes.get('/models', (c) => {
+  const type = c.req.query('type');
+  if (type) {
+    return c.json({ models: getModelsForProvider(type) });
+  }
+  return c.json({ models: getAllModels() });
 });
 
 export default providerRoutes;

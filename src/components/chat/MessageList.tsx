@@ -1,9 +1,12 @@
 /**
- * MessageList — Renders chat messages and streaming text
+ * MessageList — Renders chat messages with Markdown, tool calls, and permission prompts.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { cn } from '../../lib/utils';
+import { MarkdownRenderer } from './MarkdownRenderer';
+import { ToolCallBlock } from './ToolCallBlock';
+import { PermissionPrompt } from './PermissionPrompt';
 import type { StreamMessage } from '../../hooks/useSSEStream';
 
 interface Message {
@@ -17,14 +20,58 @@ interface MessageListProps {
   streamingText: string;
   streamEvents: StreamMessage[];
   isStreaming: boolean;
+  onPermissionAllow?: (id: string) => void;
+  onPermissionDeny?: (id: string) => void;
 }
 
-export function MessageList({ messages, streamingText, streamEvents, isStreaming }: MessageListProps) {
+export function MessageList({
+  messages,
+  streamingText,
+  streamEvents,
+  isStreaming,
+  onPermissionAllow,
+  onPermissionDeny,
+}: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingText]);
+  }, [messages, streamingText, streamEvents]);
+
+  // Parse tool events into structured data
+  const toolUses = useMemo(() => {
+    const uses: Array<{ id: string; name: string; input: unknown }> = [];
+    for (const e of streamEvents) {
+      if (e.type === 'tool_use') {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        uses.push(data as { id: string; name: string; input: unknown });
+      }
+    }
+    return uses;
+  }, [streamEvents]);
+
+  const toolResults = useMemo(() => {
+    const results = new Map<string, { tool_use_id: string; content: string; is_error?: boolean }>();
+    for (const e of streamEvents) {
+      if (e.type === 'tool_result') {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        const d = data as { tool_use_id: string; content: string; is_error?: boolean };
+        results.set(d.tool_use_id, d);
+      }
+    }
+    return results;
+  }, [streamEvents]);
+
+  const permissionRequests = useMemo(() => {
+    const reqs: Array<{ id: string; tool_name: string; description: string; input: unknown }> = [];
+    for (const e of streamEvents) {
+      if (e.type === 'permission_request') {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        reqs.push(data as { id: string; tool_name: string; description: string; input: unknown });
+      }
+    }
+    return reqs;
+  }, [streamEvents]);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -38,36 +85,42 @@ export function MessageList({ messages, streamingText, streamEvents, isStreaming
               : 'mr-auto bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100',
           )}
         >
-          <div className="text-sm whitespace-pre-wrap break-words">{msg.content}</div>
+          {msg.role === 'assistant' ? (
+            <MarkdownRenderer content={msg.content} />
+          ) : (
+            <div className="text-sm whitespace-pre-wrap break-words">{msg.content}</div>
+          )}
         </div>
       ))}
 
-      {/* Tool events */}
-      {streamEvents
-        .filter((e) => e.type === 'tool_use')
-        .map((e, i) => {
-          const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-          return (
-            <div key={`tool-${i}`} className="mx-auto max-w-[85%] rounded-lg px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-              <div className="text-xs font-medium text-amber-700 dark:text-amber-300">
-                🔧 {(data as Record<string, unknown>).name as string}
-              </div>
-            </div>
-          );
-        })}
+      {/* Tool calls */}
+      {toolUses.map((tu) => (
+        <div key={tu.id} className="max-w-[85%] mr-auto">
+          <ToolCallBlock toolUse={tu} toolResult={toolResults.get(tu.id)} />
+        </div>
+      ))}
 
-      {/* Streaming text */}
+      {/* Permission requests */}
+      {permissionRequests.map((pr) => (
+        <div key={pr.id} className="max-w-[85%] mr-auto">
+          <PermissionPrompt
+            request={pr}
+            onAllow={onPermissionAllow || (() => {})}
+            onDeny={onPermissionDeny || (() => {})}
+          />
+        </div>
+      ))}
+
+      {/* Streaming text with Markdown */}
       {isStreaming && streamingText && (
         <div className="mr-auto max-w-[85%] rounded-2xl px-4 py-3 bg-zinc-100 dark:bg-zinc-800">
-          <div className="text-sm whitespace-pre-wrap break-words text-zinc-900 dark:text-zinc-100">
-            {streamingText}
-            <span className="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-0.5" />
-          </div>
+          <MarkdownRenderer content={streamingText} />
+          <span className="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-0.5" />
         </div>
       )}
 
       {/* Loading indicator */}
-      {isStreaming && !streamingText && (
+      {isStreaming && !streamingText && toolUses.length === 0 && (
         <div className="mr-auto max-w-[85%] rounded-2xl px-4 py-3 bg-zinc-100 dark:bg-zinc-800">
           <div className="flex items-center gap-1">
             <div className="w-2 h-2 rounded-full bg-zinc-400 animate-bounce" style={{ animationDelay: '0ms' }} />
