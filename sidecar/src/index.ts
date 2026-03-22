@@ -19,7 +19,6 @@
 import fs from 'fs'
 import pathMod from 'path'
 import os from 'os'
-import { execSync, execFileSync } from 'child_process'
 
 function loadEnvFile(filePath: string): Record<string, string> {
   const vars: Record<string, string> = {}
@@ -47,8 +46,13 @@ function writeEnvFile(filePath: string, vars: Record<string, string>): void {
 function findCliCommand(name: string): string | undefined {
   try {
     const cmd = process.platform === 'win32' ? 'where' : 'which'
-    const result = execFileSync(cmd, [name], { timeout: 3000, encoding: 'utf-8' }).trim()
-    return result.split('\n')[0]?.trim() || undefined
+    const result = Bun.spawnSync([cmd, name], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 3_000,
+    })
+    if (!result.success) return undefined
+    return result.stdout.toString().trim().split('\n')[0]?.trim() || undefined
   } catch {
     return undefined
   }
@@ -60,8 +64,12 @@ function refreshProxyCredentials(envPath: string, cliCommand: string): void {
 
   // Verify the CLI supports --code
   try {
-    const help = execFileSync(cliBin, ['--help'], { timeout: 5000, encoding: 'utf-8' })
-    if (!help.includes('--code')) return
+    const helpResult = Bun.spawnSync([cliBin, '--help'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 5_000,
+    })
+    if (!helpResult.success || !helpResult.stdout.toString().includes('--code')) return
   } catch {
     return
   }
@@ -75,8 +83,16 @@ function refreshProxyCredentials(envPath: string, cliCommand: string): void {
     fs.chmodSync(wrapper, 0o755)
 
     const env = { ...process.env, PATH: `${tmpDir}${pathMod.delimiter}${process.env.PATH || ''}` }
+    // Run from home directory so the proxy CLI captures a valid X-Working-Dir
+    const cwd = os.homedir()
     try {
-      execSync(`"${cliBin}" --code --print "hi"`, { timeout: 20000, env, stdio: 'pipe' })
+      Bun.spawnSync([cliBin, '--code', '--print', 'hi'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: 20_000,
+        env: env as Record<string, string>,
+        cwd,
+      })
     } catch {
       /* ok */
     }

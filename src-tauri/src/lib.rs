@@ -3,6 +3,7 @@ mod sidecar;
 use sidecar::SidecarState;
 use std::sync::Mutex;
 use tauri::Manager;
+use tauri_plugin_dialog::DialogExt;
 
 #[tauri::command]
 fn get_sidecar_port(state: tauri::State<Mutex<SidecarState>>) -> Result<u16, String> {
@@ -15,16 +16,28 @@ fn get_platform() -> String {
     std::env::consts::OS.to_string()
 }
 
+/// Open native folder picker dialog and return selected path
+#[tauri::command]
+async fn select_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let path = app
+        .dialog()
+        .file()
+        .set_title("选择工作目录")
+        .blocking_pick_folder();
+    Ok(path.map(|p| p.to_string()))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(Mutex::new(SidecarState::default()))
-        .invoke_handler(tauri::generate_handler![get_sidecar_port, get_platform])
+        .invoke_handler(tauri::generate_handler![get_sidecar_port, get_platform, select_directory])
         .setup(|app| {
             // Start the Bun sidecar on app setup
             let app_handle = app.handle().clone();

@@ -13,9 +13,6 @@ const config: KnipConfig = {
     // Tailwind CSS consumed via Vite plugin
     'tailwindcss',
     '@tailwindcss/vite',
-    // PostCSS / autoprefixer — build tooling
-    'postcss',
-    'autoprefixer',
     // @types packages consumed implicitly by TypeScript
     '@types/.*',
   ],

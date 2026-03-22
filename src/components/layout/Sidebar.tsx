@@ -18,6 +18,7 @@ import {
 import { cn } from '../../lib/utils'
 import { useAppStore } from '../../stores'
 import { useSidecar } from '../../hooks/useSidecar'
+import { useDirectoryPicker } from '../../hooks/useDirectoryPicker'
 import { ConnectionStatus } from './ConnectionStatus'
 
 interface SidebarProps {
@@ -29,6 +30,7 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
   const { baseUrl } = useSidecar()
   const { sessions, activeSessionId, setSessions, setActiveSession, addSession, removeSession } =
     useAppStore()
+  const { getEffectiveDir, pickDirectory } = useDirectoryPicker()
   const [search, setSearch] = useState('')
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
 
@@ -41,13 +43,13 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
       .catch(() => {})
   }, [baseUrl, setSessions])
 
-  const handleNewChat = useCallback(async () => {
-    if (!baseUrl) return
-    try {
+  const createSessionWithDir = useCallback(
+    async (dir: string) => {
+      if (!baseUrl) return
       const res = await fetch(`${baseUrl}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ working_directory: '~' }),
+        body: JSON.stringify({ working_directory: dir }),
       })
       const data = await res.json()
       if (data.session) {
@@ -55,10 +57,32 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
         setActiveSession(data.session.id)
         onNavigate('chat')
       }
-    } catch {
-      // error
+    },
+    [baseUrl, addSession, setActiveSession, onNavigate],
+  )
+
+  const handleNewChat = useCallback(async () => {
+    if (!baseUrl) return
+    // Try cached directory first
+    const cached = getEffectiveDir()
+    if (cached) {
+      try {
+        await createSessionWithDir(cached)
+        return
+      } catch {
+        // fall through to picker
+      }
     }
-  }, [baseUrl, addSession, setActiveSession, onNavigate])
+    // No cached directory — open native picker
+    const picked = await pickDirectory()
+    if (picked) {
+      try {
+        await createSessionWithDir(picked)
+      } catch {
+        // error creating session
+      }
+    }
+  }, [baseUrl, getEffectiveDir, pickDirectory, createSessionWithDir])
 
   const handleDeleteSession = useCallback(
     async (id: string) => {

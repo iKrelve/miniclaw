@@ -61,12 +61,10 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.1",
-    "autoprefixer": "^10.4.27",
     "knip": "^5.86.0",
     "lefthook": "^1.11.13",
     "oxfmt": "0.41.0",
     "oxlint": "^1.56.0",
-    "postcss": "^8.5.8",
     "tailwindcss": "^4.2.2",
     "typescript": "~5.9.3",
     "vite": "^8.0.1"

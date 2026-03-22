@@ -1,5 +1,7 @@
 /**
  * ModelSelector — Dropdown for switching AI model within a chat session.
+ *
+ * Fetches available models from sidecar and groups them by provider.
  */
 
 import { useState, useEffect } from 'react'
@@ -46,13 +48,20 @@ export function ModelSelector({ onModelChange }: ModelSelectorProps) {
 
   const currentModel = models.find((m) => m.id === selected)
 
+  // Group models by provider for display
+  const grouped = models.reduce<Record<string, CatalogModel[]>>((acc, m) => {
+    const key = m.provider || 'default'
+    ;(acc[key] ??= []).push(m)
+    return acc
+  }, {})
+
   return (
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
       >
-        <span className="truncate max-w-[120px]">
+        <span className="truncate max-w-[140px]">
           {currentModel?.name || selected || 'Select model'}
         </span>
         <ChevronDown size={12} className={cn('transition-transform', open && 'rotate-180')} />
@@ -65,17 +74,9 @@ export function ModelSelector({ onModelChange }: ModelSelectorProps) {
           {/* Dropdown */}
           <div className="absolute right-0 top-full mt-1 z-50 w-64 max-h-72 overflow-y-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg">
             {models.length === 0 && (
-              <div className="px-3 py-4 text-xs text-zinc-400 text-center">
-                无可用模型（请先配置 Provider）
-              </div>
+              <div className="px-3 py-4 text-xs text-zinc-400 text-center">无可用模型</div>
             )}
-            {/* Group by provider */}
-            {Object.entries(
-              models.reduce<Record<string, CatalogModel[]>>((acc, m) => {
-                ;(acc[m.provider] ??= []).push(m)
-                return acc
-              }, {}),
-            ).map(([provider, providerModels]) => (
+            {Object.entries(grouped).map(([provider, providerModels]) => (
               <div key={provider}>
                 <div className="px-3 py-1.5 text-[10px] uppercase font-medium text-zinc-400 border-b border-zinc-100 dark:border-zinc-800">
                   {provider}

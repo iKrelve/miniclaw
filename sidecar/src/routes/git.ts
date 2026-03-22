@@ -1,27 +1,33 @@
 /**
  * Git HTTP routes — status, log, branches, commit
+ *
+ * Uses Bun.spawnSync for git command execution (no child_process).
  */
 
 import { Hono } from 'hono'
-import { execSync } from 'child_process'
 
 const gitRoutes = new Hono()
 
-function git(args: string, cwd: string): string {
-  try {
-    return execSync(`git ${args}`, { cwd, encoding: 'utf-8', timeout: 10000 }).trim()
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
+function git(args: string[], cwd: string): string {
+  const result = Bun.spawnSync(['git', ...args], {
+    cwd,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    timeout: 10_000,
+  })
+  if (!result.success) {
+    const msg = result.stderr.toString().trim() || `exit code ${result.exitCode}`
     throw new Error(`Git command failed: ${msg}`)
   }
+  return result.stdout.toString().trim()
 }
 
 /** GET /git/status?cwd=... */
 gitRoutes.get('/status', (c) => {
   const cwd = c.req.query('cwd') || process.cwd()
   try {
-    const branch = git('rev-parse --abbrev-ref HEAD', cwd)
-    const statusOutput = git('status --porcelain', cwd)
+    const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd)
+    const statusOutput = git(['status', '--porcelain'], cwd)
     const files = statusOutput
       ? statusOutput.split('\n').map((line) => ({
           status: line.slice(0, 2).trim(),
@@ -40,7 +46,7 @@ gitRoutes.get('/log', (c) => {
   const limit = parseInt(c.req.query('limit') || '20', 10)
   try {
     const format = '%H|||%an|||%ae|||%aI|||%s'
-    const output = git(`log --format="${format}" -${limit}`, cwd)
+    const output = git(['log', `--format=${format}`, `-${limit}`], cwd)
     const commits = output
       ? output.split('\n').map((line) => {
           const [hash, author, email, date, message] = line.split('|||')
@@ -57,8 +63,8 @@ gitRoutes.get('/log', (c) => {
 gitRoutes.get('/branches', (c) => {
   const cwd = c.req.query('cwd') || process.cwd()
   try {
-    const current = git('rev-parse --abbrev-ref HEAD', cwd)
-    const output = git('branch --list', cwd)
+    const current = git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd)
+    const output = git(['branch', '--list'], cwd)
     const branches = output
       ? output
           .split('\n')
@@ -81,13 +87,13 @@ gitRoutes.post('/commit', async (c) => {
   try {
     if (files && files.length > 0) {
       for (const file of files) {
-        git(`add "${file}"`, cwd)
+        git(['add', file], cwd)
       }
     } else {
-      git('add -A', cwd)
+      git(['add', '-A'], cwd)
     }
-    git(`commit -m "${message.replace(/"/g, '\\"')}"`, cwd)
-    const hash = git('rev-parse --short HEAD', cwd)
+    git(['commit', '-m', message], cwd)
+    const hash = git(['rev-parse', '--short', 'HEAD'], cwd)
     return c.json({ success: true, hash })
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'Commit failed' }, 500)
@@ -102,7 +108,7 @@ gitRoutes.post('/checkout', async (c) => {
     return c.json({ error: 'cwd and branch are required' }, 400)
   }
   try {
-    git(`checkout "${branch}"`, cwd)
+    git(['checkout', branch], cwd)
     return c.json({ success: true })
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'Checkout failed' }, 500)

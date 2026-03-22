@@ -12,6 +12,7 @@ import { FileDropZone } from './FileDropZone'
 import { useSSEStream } from '../../hooks/useSSEStream'
 import { useAppStore } from '../../stores'
 import { useSidecar } from '../../hooks/useSidecar'
+import { useDirectoryPicker } from '../../hooks/useDirectoryPicker'
 import { Toaster, toast } from '../ui/toast'
 
 export function ChatView() {
@@ -25,6 +26,7 @@ export function ChatView() {
     setActiveSession,
     sessions,
   } = useAppStore()
+  const { getEffectiveDir, pickDirectory } = useDirectoryPicker()
   const {
     streamingText,
     isStreaming,
@@ -77,11 +79,22 @@ export function ChatView() {
   const handleSendNew = useCallback(
     async (content: string) => {
       if (!baseUrl) return
+
+      // Resolve working directory: cached → picker → abort
+      let dir = getEffectiveDir()
+      if (!dir) {
+        dir = await pickDirectory()
+        if (!dir) {
+          toast('请先选择工作目录')
+          return
+        }
+      }
+
       try {
         const res = await fetch(`${baseUrl}/sessions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: content.slice(0, 50), working_directory: '~' }),
+          body: JSON.stringify({ title: content.slice(0, 50), working_directory: dir }),
         })
         const data = await res.json()
         if (!data.session) return
@@ -103,7 +116,7 @@ export function ChatView() {
         toast(err instanceof Error ? err.message : '创建会话失败')
       }
     },
-    [baseUrl, addSession, setActiveSession, addMessage, send],
+    [baseUrl, addSession, setActiveSession, addMessage, send, getEffectiveDir, pickDirectory],
   )
 
   const handleInterrupt = useCallback(() => {
@@ -175,7 +188,15 @@ export function ChatView() {
     }
   }, [isStreaming, streamingText, addMessage, clear])
 
+  // Format directory display (show last 2 segments)
+  const formatDir = (dir: string): string => {
+    const parts = dir.split('/')
+    if (parts.length <= 2) return dir
+    return '.../' + parts.slice(-2).join('/')
+  }
+
   if (!activeSessionId) {
+    const cachedDir = getEffectiveDir()
     return (
       <div className="flex-1 flex flex-col min-h-0">
         {/* Welcome area */}
@@ -184,6 +205,16 @@ export function ChatView() {
             <div className="text-6xl">🦞</div>
             <h2 className="text-2xl font-semibold text-zinc-700 dark:text-zinc-300">小龙虾</h2>
             <p className="text-zinc-500 dark:text-zinc-400">输入消息开始新对话</p>
+            {/* Working directory indicator */}
+            <button
+              onClick={async () => {
+                await pickDirectory()
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 transition-colors"
+              title={cachedDir || '点击选择工作目录'}
+            >
+              📁 {cachedDir ? formatDir(cachedDir) : '选择工作目录'}
+            </button>
           </div>
         </div>
         {/* Input always visible */}
@@ -195,10 +226,20 @@ export function ChatView() {
 
   return (
     <FileDropZone onFilesDropped={handleFilesDropped} disabled={!ready}>
-      {/* Session header with model selector */}
+      {/* Session header with model selector + working dir */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-200 dark:border-zinc-800">
-        <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
-          {activeSession?.title || 'New Chat'}
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
+            {activeSession?.title || 'New Chat'}
+          </div>
+          {activeSession?.working_directory && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 truncate max-w-[200px]"
+              title={activeSession.working_directory}
+            >
+              📁 {formatDir(activeSession.working_directory)}
+            </span>
+          )}
         </div>
         <ModelSelector />
       </div>

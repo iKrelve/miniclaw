@@ -5,6 +5,7 @@
 import { Hono } from 'hono'
 import fs from 'fs'
 import path from 'path'
+import os from 'os'
 
 const fileRoutes = new Hono()
 
@@ -95,6 +96,29 @@ fileRoutes.get('/browse', (c) => {
   return c.json({ tree, root: dirPath })
 })
 
+/** GET /files/browse-dirs?dir=... — List subdirectories only (for folder picker) */
+fileRoutes.get('/browse-dirs', (c) => {
+  const dir = c.req.query('dir') || os.homedir()
+  const resolved = dir.startsWith('~') ? dir.replace(/^~/, os.homedir()) : dir
+  if (!fs.existsSync(resolved)) {
+    return c.json({ error: 'Directory not found' }, 404)
+  }
+  const parent = path.dirname(resolved)
+  const directories: { name: string; path: string }[] = []
+  try {
+    for (const entry of fs.readdirSync(resolved, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      if (entry.name.startsWith('.')) continue
+      if (IGNORED_DIRS.has(entry.name)) continue
+      directories.push({ name: entry.name, path: path.join(resolved, entry.name) })
+    }
+    directories.sort((a, b) => a.name.localeCompare(b.name))
+  } catch {
+    // permission error etc
+  }
+  return c.json({ current: resolved, parent: parent !== resolved ? parent : null, directories })
+})
+
 /** GET /files/preview?path=... — Preview file content */
 fileRoutes.get('/preview', (c) => {
   const filePath = c.req.query('path')
@@ -115,7 +139,7 @@ fileRoutes.get('/preview', (c) => {
       language: ext || 'text',
       line_count: lines,
     })
-  } catch (err) {
+  } catch {
     return c.json({ error: 'Failed to read file' }, 500)
   }
 })

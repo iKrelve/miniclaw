@@ -1,9 +1,10 @@
 /**
  * Platform utilities — Claude binary detection and PATH expansion.
  * Simplified from CodePilot's src/lib/platform.ts.
+ *
+ * Uses Bun.spawnSync (no child_process).
  */
 
-import { execFileSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -74,13 +75,14 @@ export function findClaudeBinary(): string | undefined {
   // Try `which` / `where` as fallback
   try {
     const cmd = isWindows ? 'where' : 'which'
-    const result = execFileSync(cmd, ['claude'], {
-      timeout: 5000,
-      encoding: 'utf-8',
-    }).trim()
-    if (result) {
-      const first = result.split('\n')[0].trim()
-      if (fs.existsSync(first)) {
+    const result = Bun.spawnSync([cmd, 'claude'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 5_000,
+    })
+    if (result.success) {
+      const first = result.stdout.toString().trim().split('\n')[0]?.trim()
+      if (first && fs.existsSync(first)) {
         cachedClaudePath = first
         return first
       }

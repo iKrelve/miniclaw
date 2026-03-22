@@ -27,6 +27,10 @@ interface AppStore {
   setMessages: (messages: Message[]) => void
   addMessage: (message: Message) => void
 
+  // Working directory (last selected project path)
+  workingDirectory: string
+  setWorkingDirectory: (dir: string) => void
+
   // UI
   theme: string
   setTheme: (theme: string) => void
@@ -61,6 +65,10 @@ export const useAppStore = create<AppStore>((set) => ({
   messages: [],
   setMessages: (messages) => set({ messages }),
   addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+
+  // Working directory
+  workingDirectory: localStorage.getItem('miniclaw:last-working-directory') || '',
+  setWorkingDirectory: (dir) => set({ workingDirectory: dir }),
 
   // UI
   theme: 'default',

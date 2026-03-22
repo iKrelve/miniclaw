@@ -350,6 +350,7 @@ Tauri expects the sidecar binary at `src-tauri/binaries/sidecar-{target-triple}`
 ### `bun build --compile` Compatibility (Critical)
 
 The sidecar is compiled to a single binary via `bun build --compile`. This means:
+
 - **No `pino.transport()`** — worker threads dynamically require target modules (`pino-roll`, `pino/file`) which don't exist inside the bunfs virtual filesystem. Use `pino.multistream()` + `pino.destination()` instead.
 - **No native `.node` addons** — packages like `node-pty`, `better-sqlite3` (npm version) that ship C++ addons won't load from inside the binary. Use Bun built-ins (`bun:sqlite`, `Bun.spawn({ terminal })`) instead.
 - **Bun native PTY** — `Bun.spawn([shell], { terminal: { cols, rows, data() } })` provides real PTY support with zero external dependencies. The subprocess sees a real `/dev/ttys*` and supports `proc.terminal.write()`, `proc.terminal.resize()`, `proc.terminal.close()`.
@@ -366,49 +367,49 @@ API keys and sensitive settings are encrypted at rest in SQLite using AES-256-GC
 
 ## Sidecar API Reference
 
-| Method | Path                          | Purpose                                 |
-| ------ | ----------------------------- | --------------------------------------- |
-| GET    | `/health`                     | Health check                            |
-| POST   | `/chat`                       | Send message, receive SSE stream        |
-| POST   | `/chat/interrupt`             | Interrupt active stream                 |
-| POST   | `/chat/permission`            | Respond to tool permission request      |
-| POST | `/terminal` | Create a new terminal session (accepts `cols`, `rows`) |
-| POST | `/terminal/:id/resize` | Resize terminal PTY (`cols`, `rows`) |
-| GET | `/terminal/:id/ws` | WebSocket for real-time terminal I/O |
-| DELETE | `/terminal/:id` | Kill a terminal session |
-| POST   | `/uploads`                    | File upload handling                    |
-| GET    | `/sessions`                   | List sessions                           |
-| POST   | `/sessions`                   | Create session                          |
-| GET    | `/sessions/:id`               | Get session                             |
-| PUT    | `/sessions/:id`               | Update session                          |
-| DELETE | `/sessions/:id`               | Delete session                          |
-| GET    | `/sessions/:id/messages`      | Get messages for session                |
-| GET    | `/providers`                  | List API providers                      |
-| POST   | `/providers`                  | Create provider                         |
-| PUT    | `/providers/:id`              | Update provider                         |
-| DELETE | `/providers/:id`              | Delete provider                         |
-| POST   | `/providers/:id/activate`     | Set as default provider                 |
-| GET    | `/settings`                   | Get all settings                        |
-| PUT    | `/settings`                   | Bulk update settings                    |
-| PUT    | `/settings/:key`              | Update single setting                   |
-| GET    | `/files/browse?path=...`      | Browse directory tree                   |
-| GET    | `/files/preview?path=...`     | Preview file content                    |
-| GET    | `/git/status?cwd=...`         | Git status                              |
-| GET    | `/git/log?cwd=...`            | Git log                                 |
-| GET    | `/git/branches?cwd=...`       | List branches                           |
-| POST   | `/git/commit`                 | Stage and commit                        |
-| POST   | `/git/checkout`               | Switch branch                           |
-| GET    | `/mcp`                        | List MCP server configs                 |
-| GET    | `/mcp/status`                 | MCP connection status                   |
-| GET    | `/tasks?session_id=...`       | List tasks for session                  |
-| POST   | `/tasks`                      | Create task                             |
-| PUT    | `/tasks/:id`                  | Update task status                      |
-| DELETE | `/tasks/:id`                  | Delete task                             |
-| GET    | `/skills`                     | List available skills                   |
-| GET    | `/skills/:name`               | Get skill content                       |
-| GET    | `/workspace?path=...`         | Get workspace config status             |
-| POST   | `/workspace/setup`            | Initialize workspace config files       |
-| GET    | `/workspace/context?path=...` | Get workspace context for system prompt |
+| Method | Path                          | Purpose                                                |
+| ------ | ----------------------------- | ------------------------------------------------------ |
+| GET    | `/health`                     | Health check                                           |
+| POST   | `/chat`                       | Send message, receive SSE stream                       |
+| POST   | `/chat/interrupt`             | Interrupt active stream                                |
+| POST   | `/chat/permission`            | Respond to tool permission request                     |
+| POST   | `/terminal`                   | Create a new terminal session (accepts `cols`, `rows`) |
+| POST   | `/terminal/:id/resize`        | Resize terminal PTY (`cols`, `rows`)                   |
+| GET    | `/terminal/:id/ws`            | WebSocket for real-time terminal I/O                   |
+| DELETE | `/terminal/:id`               | Kill a terminal session                                |
+| POST   | `/uploads`                    | File upload handling                                   |
+| GET    | `/sessions`                   | List sessions                                          |
+| POST   | `/sessions`                   | Create session                                         |
+| GET    | `/sessions/:id`               | Get session                                            |
+| PUT    | `/sessions/:id`               | Update session                                         |
+| DELETE | `/sessions/:id`               | Delete session                                         |
+| GET    | `/sessions/:id/messages`      | Get messages for session                               |
+| GET    | `/providers`                  | List API providers                                     |
+| POST   | `/providers`                  | Create provider                                        |
+| PUT    | `/providers/:id`              | Update provider                                        |
+| DELETE | `/providers/:id`              | Delete provider                                        |
+| POST   | `/providers/:id/activate`     | Set as default provider                                |
+| GET    | `/settings`                   | Get all settings                                       |
+| PUT    | `/settings`                   | Bulk update settings                                   |
+| PUT    | `/settings/:key`              | Update single setting                                  |
+| GET    | `/files/browse?path=...`      | Browse directory tree                                  |
+| GET    | `/files/preview?path=...`     | Preview file content                                   |
+| GET    | `/git/status?cwd=...`         | Git status                                             |
+| GET    | `/git/log?cwd=...`            | Git log                                                |
+| GET    | `/git/branches?cwd=...`       | List branches                                          |
+| POST   | `/git/commit`                 | Stage and commit                                       |
+| POST   | `/git/checkout`               | Switch branch                                          |
+| GET    | `/mcp`                        | List MCP server configs                                |
+| GET    | `/mcp/status`                 | MCP connection status                                  |
+| GET    | `/tasks?session_id=...`       | List tasks for session                                 |
+| POST   | `/tasks`                      | Create task                                            |
+| PUT    | `/tasks/:id`                  | Update task status                                     |
+| DELETE | `/tasks/:id`                  | Delete task                                            |
+| GET    | `/skills`                     | List available skills                                  |
+| GET    | `/skills/:name`               | Get skill content                                      |
+| GET    | `/workspace?path=...`         | Get workspace config status                            |
+| POST   | `/workspace/setup`            | Initialize workspace config files                      |
+| GET    | `/workspace/context?path=...` | Get workspace context for system prompt                |
 
 ## Tauri IPC Commands
 

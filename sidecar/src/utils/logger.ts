@@ -1,19 +1,17 @@
 /**
- * Logger — pino-based structured logging to ~/.miniclaw/logs/
+ * Logger — Bun-native structured logging to ~/.miniclaw/logs/
  *
- * Uses pino.multistream() + pino.destination() (synchronous, in-process)
- * instead of pino.transport() (worker threads). pino.transport() dynamically
- * requires target modules at runtime, which breaks inside a compiled
- * single-binary from `bun build --compile` (node_modules doesn't exist).
+ * Uses Bun.file().writer() for async file writes (no pino, no worker threads).
+ * Fully compatible with `bun build --compile`.
  *
  * Output:
  *   1. File → ~/.miniclaw/logs/sidecar.log (async flush, with size-based rotation)
  *   2. stderr → dev console (stdout reserved for Tauri READY protocol)
  *
+ * Format: NDJSON (one JSON object per line), same as pino for log reader compat.
  * Public API: `logger.info(mod, msg, data?)` — unchanged from call sites.
  */
 
-import pino from 'pino'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -25,6 +23,10 @@ const LOG_DIR = path.join(
 const LOG_FILE = path.join(LOG_DIR, 'sidecar.log')
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB per file
 const MAX_ROTATED = 3
+
+// pino-compatible numeric log levels
+const LEVELS = { debug: 20, info: 30, warn: 40, error: 50 } as const
+type Level = keyof typeof LEVELS
 
 // Ensure log directory exists
 if (!fs.existsSync(LOG_DIR)) {
@@ -54,49 +56,51 @@ function rotate() {
 // Rotate leftover large log from previous run
 rotate()
 
-// In-process multistream: file (async flush) + stderr (sync).
-// No worker threads, compatible with bun build --compile.
-const fileDest = pino.destination({ dest: LOG_FILE, sync: false, mkdir: true })
-const stderrDest = pino.destination({ dest: 2, sync: true })
+// Bun-native file writer for async log output
+const writer = Bun.file(LOG_FILE).writer()
 
-const pinoInstance = pino(
-  {
-    level: 'debug',
-    timestamp: pino.stdTimeFunctions.isoTime,
-  },
-  pino.multistream([
-    { level: 'debug', stream: fileDest },
-    { level: 'debug', stream: stderrDest },
-  ]),
-)
+/**
+ * Write a single NDJSON log line to file + stderr.
+ */
+function emit(level: Level, mod: string, msg: string, data?: Record<string, unknown>) {
+  const entry = {
+    level: LEVELS[level],
+    time: new Date().toISOString(),
+    mod,
+    msg,
+    ...data,
+  }
+  const line = JSON.stringify(entry) + '\n'
+
+  // Async write to file (buffered, Bun flushes automatically)
+  writer.write(line)
+
+  // Sync write to stderr for dev console (stdout reserved for READY protocol)
+  process.stderr.write(line)
+}
 
 // Periodic rotation check (every 60s)
 setInterval(() => {
+  writer.flush()
   rotate()
-  // Reopen file descriptor after rotation so new logs go to the fresh file
-  fileDest.reopen()
 }, 60_000).unref()
 
-/**
- * Wrapper preserving `logger.info(mod, msg, data?)` convention.
- */
-function log(level: pino.Level, mod: string, msg: string, data?: Record<string, unknown>) {
-  if (data) {
-    pinoInstance[level]({ mod, ...data }, msg)
-  } else {
-    pinoInstance[level]({ mod }, msg)
-  }
-}
+// Flush on exit to avoid losing buffered logs
+process.on('beforeExit', () => {
+  writer.flush()
+})
 
 export const logger = {
-  debug: (mod: string, msg: string, data?: Record<string, unknown>) => log('debug', mod, msg, data),
-  info: (mod: string, msg: string, data?: Record<string, unknown>) => log('info', mod, msg, data),
-  warn: (mod: string, msg: string, data?: Record<string, unknown>) => log('warn', mod, msg, data),
-  error: (mod: string, msg: string, data?: Record<string, unknown>) => log('error', mod, msg, data),
+  debug: (mod: string, msg: string, data?: Record<string, unknown>) =>
+    emit('debug', mod, msg, data),
+  info: (mod: string, msg: string, data?: Record<string, unknown>) => emit('info', mod, msg, data),
+  warn: (mod: string, msg: string, data?: Record<string, unknown>) => emit('warn', mod, msg, data),
+  error: (mod: string, msg: string, data?: Record<string, unknown>) =>
+    emit('error', mod, msg, data),
 
   /** Log directory path */
   logDir: LOG_DIR,
 
-  /** Underlying pino instance (for advanced use) */
-  pino: pinoInstance,
+  /** Flush buffered writes to disk */
+  flush: () => writer.flush(),
 }
