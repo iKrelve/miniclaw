@@ -1,21 +1,15 @@
 /**
  * MessageInput — Card-style chat input with model selector in footer toolbar.
  *
- * A full-width card container with a resizable textarea and a footer toolbar
- * holding model selector + send/stop button. Aligned with CodePilot's
- * PromptInput pattern where model selection is inside the input area.
+ * Fetches provider model groups from sidecar and displays models grouped by
+ * provider. On selection, passes both providerId and modelId to the parent.
  */
 
 import { useState, useRef, useEffect, type KeyboardEvent } from 'react'
 import { Send, Square, CornerDownLeft, ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useSidecar } from '../../hooks/useSidecar'
-
-interface CatalogModel {
-  id: string
-  name: string
-  provider: string
-}
+import type { ProviderModelGroup, ProviderModelOption } from '../../../shared/types'
 
 interface MessageInputProps {
   onSend: (content: string) => void
@@ -24,9 +18,25 @@ interface MessageInputProps {
   disabled?: boolean
   /** Currently selected model ID */
   currentModel: string
+  /** Currently selected provider ID */
+  currentProviderId: string
   /** Called when user picks a different model */
-  onModelChange: (modelId: string) => void
+  onModelChange: (providerId: string, modelId: string) => void
 }
+
+// Default fallback when API is unavailable
+const FALLBACK_GROUPS: ProviderModelGroup[] = [
+  {
+    provider_id: 'env',
+    provider_name: 'Claude Code',
+    provider_type: 'anthropic',
+    models: [
+      { value: 'sonnet', label: 'Claude Sonnet 4' },
+      { value: 'opus', label: 'Claude Opus 4' },
+      { value: 'haiku', label: 'Claude Haiku 3.5' },
+    ],
+  },
+]
 
 export function MessageInput({
   onSend,
@@ -34,6 +44,7 @@ export function MessageInput({
   isStreaming,
   disabled,
   currentModel,
+  currentProviderId,
   onModelChange,
 }: MessageInputProps) {
   const [value, setValue] = useState('')
@@ -42,16 +53,20 @@ export function MessageInput({
 
   // Model dropdown state
   const { baseUrl } = useSidecar()
-  const [models, setModels] = useState<CatalogModel[]>([])
+  const [groups, setGroups] = useState<ProviderModelGroup[]>(FALLBACK_GROUPS)
   const [modelOpen, setModelOpen] = useState(false)
   const modelRef = useRef<HTMLDivElement>(null)
 
-  // Fetch models
+  // Fetch provider model groups
   useEffect(() => {
     if (!baseUrl) return
     fetch(`${baseUrl}/providers/models`)
       .then((res) => res.json())
-      .then((data) => setModels(data.models || []))
+      .then((data) => {
+        if (data.groups && data.groups.length > 0) {
+          setGroups(data.groups)
+        }
+      })
       .catch(() => {})
   }, [baseUrl])
 
@@ -96,20 +111,15 @@ export function MessageInput({
     }
   }
 
-  const handleModelSelect = (modelId: string) => {
-    onModelChange(modelId)
+  const handleModelSelect = (providerId: string, modelId: string) => {
+    onModelChange(providerId, modelId)
     setModelOpen(false)
   }
 
   const canSend = !disabled && value.trim().length > 0
-  const currentModelObj = models.find((m) => m.id === currentModel)
 
-  // Group models by provider
-  const grouped = models.reduce<Record<string, CatalogModel[]>>((acc, m) => {
-    const key = m.provider || 'default'
-    ;(acc[key] ??= []).push(m)
-    return acc
-  }, {})
+  // Find current model label for display
+  const currentLabel = findModelLabel(groups, currentProviderId, currentModel)
 
   return (
     <div className="px-4 pb-4 pt-2">
@@ -158,9 +168,7 @@ export function MessageInput({
                 onClick={() => setModelOpen(!modelOpen)}
                 className="flex items-center gap-1 px-2 py-1 text-xs rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 transition-colors font-mono"
               >
-                <span className="truncate max-w-[120px]">
-                  {currentModelObj?.name || currentModel || 'Select model'}
-                </span>
+                <span className="truncate max-w-[120px]">{currentLabel}</span>
                 <ChevronDown
                   size={10}
                   className={cn('transition-transform', modelOpen && 'rotate-180')}
@@ -169,32 +177,34 @@ export function MessageInput({
 
               {modelOpen && (
                 <div className="absolute left-0 bottom-full mb-1 z-50 w-64 max-h-72 overflow-y-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg">
-                  {models.length === 0 && (
+                  {groups.length === 0 && (
                     <div className="px-3 py-4 text-xs text-zinc-400 text-center">
                       无可用模型（请先在设置中配置 Provider）
                     </div>
                   )}
-                  {Object.entries(grouped).map(([provider, providerModels]) => (
-                    <div key={provider}>
+                  {groups.map((group) => (
+                    <div key={group.provider_id}>
                       <div className="px-3 py-1.5 text-[10px] uppercase font-medium text-zinc-400 border-b border-zinc-100 dark:border-zinc-800">
-                        {provider}
+                        {group.provider_name}
                       </div>
-                      {providerModels.map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => handleModelSelect(m.id)}
-                          className={cn(
-                            'w-full text-left px-3 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors flex items-center justify-between',
-                            m.id === currentModel &&
-                              'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
-                          )}
-                        >
-                          <span>{m.name}</span>
-                          {m.id === currentModel && (
-                            <span className="text-blue-500 text-xs">✓</span>
-                          )}
-                        </button>
-                      ))}
+                      {group.models.map((m) => {
+                        const active =
+                          m.value === currentModel && group.provider_id === currentProviderId
+                        return (
+                          <button
+                            key={`${group.provider_id}-${m.value}`}
+                            onClick={() => handleModelSelect(group.provider_id, m.value)}
+                            className={cn(
+                              'w-full text-left px-3 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors flex items-center justify-between',
+                              active &&
+                                'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
+                            )}
+                          >
+                            <span>{m.label}</span>
+                            {active && <span className="text-blue-500 text-xs">✓</span>}
+                          </button>
+                        )
+                      })}
                     </div>
                   ))}
                 </div>
@@ -218,11 +228,10 @@ export function MessageInput({
               'text-xs font-medium',
               'transition-all duration-150',
               isStreaming
-                ? 'bg-red-500 text-white hover:bg-red-600 active:scale-95'
+                ? 'bg-red-500 hover:bg-red-600 text-white'
                 : canSend
-                  ? 'bg-blue-500 text-white hover:bg-blue-600 active:scale-95'
-                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
+                  ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-sm'
+                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed',
             )}
           >
             {isStreaming ? (
@@ -241,4 +250,20 @@ export function MessageInput({
       </div>
     </div>
   )
+}
+
+/** Find the display label for the current model in the groups. */
+function findModelLabel(groups: ProviderModelGroup[], providerId: string, modelId: string): string {
+  // Try exact match (provider + model)
+  const group = groups.find((g) => g.provider_id === providerId)
+  if (group) {
+    const model = group.models.find((m) => m.value === modelId)
+    if (model) return model.label
+  }
+  // Fallback: search all groups for the model
+  for (const g of groups) {
+    const model = g.models.find((m) => m.value === modelId)
+    if (model) return model.label
+  }
+  return modelId || 'Select model'
 }

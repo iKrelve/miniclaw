@@ -20,6 +20,7 @@ import { useAppStore } from '../../stores'
 import { useSidecar } from '../../hooks/useSidecar'
 import { useDirectoryPicker } from '../../hooks/useDirectoryPicker'
 import { ConnectionStatus } from './ConnectionStatus'
+import logo from '../../assets/logo.png'
 
 interface SidebarProps {
   onNavigate: (view: string) => void
@@ -130,7 +131,7 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
       {/* Header */}
       <div className="p-4 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center gap-2">
-          <span className="text-xl">🦞</span>
+          <img src={logo} alt="小龙虾" className="w-6 h-6 rounded" />
           <span className="font-semibold text-zinc-800 dark:text-zinc-200">小龙虾</span>
         </div>
         <button

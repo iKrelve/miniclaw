@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useSidecar } from '../../hooks/useSidecar'
+import logo from '../../assets/logo.png'
 import { Button } from '../ui/button'
 import {
   CheckCircle,
@@ -142,7 +143,7 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
         {/* ── Header ── */}
         <div className="px-6 pt-6 pb-4 border-b border-zinc-100 dark:border-zinc-800">
           <div className="flex items-center gap-3">
-            <div className="text-4xl">🦞</div>
+            <img src={logo} alt="小龙虾" className="w-10 h-10 rounded-lg" />
             <div className="flex-1">
               <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">欢迎使用小龙虾</h1>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">

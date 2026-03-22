@@ -1,5 +1,5 @@
 /**
- * Provider HTTP routes — CRUD for API providers
+ * Provider HTTP routes — CRUD for API providers + model catalog
  */
 
 import { Hono } from 'hono'
@@ -10,8 +10,10 @@ import {
   updateProvider,
   deleteProvider,
   activateProvider,
+  getSetting,
 } from '../db'
-import { getModelsForProvider, getAllModels } from '../services/provider-resolver'
+import { getModelsForProvider } from '../services/provider-resolver'
+import type { ProviderModelGroup } from '../../../shared/types'
 
 const providerRoutes = new Hono()
 
@@ -29,6 +31,60 @@ providerRoutes.post('/', async (c) => {
   }
   const provider = createProvider({ name, type, api_key: api_key || '', base_url })
   return c.json({ provider }, 201)
+})
+
+/**
+ * GET /providers/models — Return provider model groups for the model selector.
+ *
+ * Response: { groups: ProviderModelGroup[], default_provider_id: string }
+ *
+ * NOTE: This route MUST be defined BEFORE `/:id` so Hono doesn't match
+ * "models" as a provider ID.
+ */
+providerRoutes.get('/models', (c) => {
+  const groups: ProviderModelGroup[] = []
+
+  // 1) Built-in "env" group — always present (Claude Code SDK default path)
+  groups.push({
+    provider_id: 'env',
+    provider_name: 'Claude Code',
+    provider_type: 'anthropic',
+    models: [
+      { value: 'sonnet', label: 'Claude Sonnet 4' },
+      { value: 'opus', label: 'Claude Opus 4' },
+      { value: 'haiku', label: 'Claude Haiku 3.5' },
+    ],
+  })
+
+  // 2) Build a group for each user-configured provider
+  const providers = listProviders()
+  for (const provider of providers) {
+    const type = (provider.type as string) || 'anthropic'
+    const catalog = getModelsForProvider(type)
+    const models = catalog.map((m) => ({
+      value: m.id,
+      label: m.name,
+    }))
+
+    // If the catalog is empty for this provider type (e.g. custom),
+    // add a placeholder so the group still appears
+    if (models.length === 0) {
+      models.push({ value: 'default', label: type })
+    }
+
+    groups.push({
+      provider_id: provider.id as string,
+      provider_name: (provider.name as string) || type,
+      provider_type: type,
+      models,
+    })
+  }
+
+  // Determine default provider
+  const defaultId =
+    getSetting('default_provider_id') || (providers.find((p) => p.is_active)?.id as string) || 'env'
+
+  return c.json({ groups, default_provider_id: defaultId })
 })
 
 /** GET /providers/:id — Get a provider */
@@ -73,15 +129,6 @@ providerRoutes.post('/:id/activate', (c) => {
   }
   activateProvider(id)
   return c.json({ success: true })
-})
-
-/** GET /providers/models?type=... — Get available models */
-providerRoutes.get('/models', (c) => {
-  const type = c.req.query('type')
-  if (type) {
-    return c.json({ models: getModelsForProvider(type) })
-  }
-  return c.json({ models: getAllModels() })
 })
 
 export default providerRoutes

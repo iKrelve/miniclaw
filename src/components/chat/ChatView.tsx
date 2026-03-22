@@ -12,6 +12,7 @@ import { MessageInput } from './MessageInput'
 import { ContextUsageIndicator } from './ContextUsageIndicator'
 import { FileDropZone } from './FileDropZone'
 import { useSSEStream } from '../../hooks/useSSEStream'
+import logo from '../../assets/logo.png'
 import { useAppStore } from '../../stores'
 import { useSidecar } from '../../hooks/useSidecar'
 import { useDirectoryPicker } from '../../hooks/useDirectoryPicker'
@@ -58,16 +59,18 @@ export function ChatView() {
   }, [activeSession?.model, activeSession?.provider_id])
 
   const handleModelChange = useCallback(
-    (modelId: string) => {
+    (providerId: string, modelId: string) => {
       setCurrentModel(modelId)
+      setCurrentProviderId(providerId)
       localStorage.setItem(MODEL_STORAGE_KEY, modelId)
+      localStorage.setItem(PROVIDER_STORAGE_KEY, providerId)
 
       // Update the active session's model on the backend
       if (baseUrl && activeSessionId) {
         fetch(`${baseUrl}/sessions/${activeSessionId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: modelId }),
+          body: JSON.stringify({ model: modelId, provider_id: providerId }),
         }).catch(() => {})
       }
     },
@@ -254,7 +257,7 @@ export function ChatView() {
         {/* Welcome area */}
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-4">
-            <div className="text-6xl">🦞</div>
+            <img src={logo} alt="小龙虾" className="w-16 h-16 mx-auto" />
             <h2 className="text-2xl font-semibold text-zinc-700 dark:text-zinc-300">小龙虾</h2>
             <p className="text-zinc-500 dark:text-zinc-400">输入消息开始新对话</p>
             {/* Working directory indicator */}
@@ -275,6 +278,7 @@ export function ChatView() {
           isStreaming={false}
           disabled={!ready}
           currentModel={currentModel}
+          currentProviderId={currentProviderId}
           onModelChange={handleModelChange}
         />
         <Toaster position="bottom-right" />
@@ -317,6 +321,7 @@ export function ChatView() {
         isStreaming={isStreaming}
         disabled={!ready}
         currentModel={currentModel}
+        currentProviderId={currentProviderId}
         onModelChange={handleModelChange}
       />
       <Toaster position="bottom-right" />

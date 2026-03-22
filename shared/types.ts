@@ -207,3 +207,19 @@ export interface UpdateProviderRequest {
   base_url?: string
   is_active?: boolean
 }
+
+// ==========================================
+// Provider Model Groups (for model selector)
+// ==========================================
+
+export interface ProviderModelOption {
+  value: string
+  label: string
+}
+
+export interface ProviderModelGroup {
+  provider_id: string
+  provider_name: string
+  provider_type: string
+  models: ProviderModelOption[]
+}

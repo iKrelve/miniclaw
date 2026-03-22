@@ -4,6 +4,7 @@ import { ErrorBoundary } from './components/layout/ErrorBoundary'
 import { OnboardingWizard } from './components/setup/OnboardingWizard'
 import { useTheme } from './hooks/useTheme'
 import { useSidecar } from './hooks/useSidecar'
+import logo from './assets/logo.png'
 import './App.css'
 
 function App() {
@@ -32,7 +33,7 @@ function App() {
     return (
       <div className="flex h-screen items-center justify-center bg-white dark:bg-zinc-950">
         <div className="text-center space-y-4">
-          <div className="text-6xl animate-bounce">🦞</div>
+          <img src={logo} alt="小龙虾" className="w-16 h-16 mx-auto animate-bounce" />
           <p className="text-sm text-zinc-500">正在启动小龙虾...</p>
         </div>
       </div>
