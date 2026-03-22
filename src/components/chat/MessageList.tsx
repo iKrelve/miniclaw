@@ -73,6 +73,17 @@ export function MessageList({
     return reqs;
   }, [streamEvents]);
 
+  // Collect error events so they are visible to the user
+  const errors = useMemo(() => {
+    const errs: string[] = [];
+    for (const e of streamEvents) {
+      if (e.type === 'error') {
+        errs.push(typeof e.data === 'string' ? e.data : JSON.stringify(e.data));
+      }
+    }
+    return errs;
+  }, [streamEvents]);
+
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       {messages.map((msg) => (
@@ -118,6 +129,16 @@ export function MessageList({
           <span className="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-0.5" />
         </div>
       )}
+
+      {/* Error messages */}
+      {errors.map((err, i) => (
+        <div
+          key={`err-${i}`}
+          className="mr-auto max-w-[85%] rounded-2xl px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm"
+        >
+          <span className="font-medium">错误：</span>{err}
+        </div>
+      ))}
 
       {/* Loading indicator */}
       {isStreaming && !streamingText && toolUses.length === 0 && (

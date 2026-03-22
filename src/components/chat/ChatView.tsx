@@ -3,7 +3,7 @@
  * permissions, model selector, context usage, and file drop.
  */
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { ModelSelector } from './ModelSelector';
@@ -21,10 +21,19 @@ export function ChatView() {
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
 
+  // When handleSendNew creates a session and immediately starts streaming,
+  // the activeSessionId change triggers this effect. Skip clear() in that
+  // case so we don't wipe the in-flight SSE stream data.
+  const skipNextClearRef = useRef(false);
+
   // Load messages when session changes
   useEffect(() => {
     if (!baseUrl || !activeSessionId) return;
-    clear();
+    if (skipNextClearRef.current) {
+      skipNextClearRef.current = false;
+    } else {
+      clear();
+    }
     fetch(`${baseUrl}/sessions/${activeSessionId}/messages`)
       .then((res) => res.json())
       .then((data) => setMessages(data.messages || []))
@@ -57,11 +66,14 @@ export function ChatView() {
         if (!data.session) return;
         const session = data.session;
         addSession(session);
+        // Mark so the useEffect triggered by setActiveSession won't clear()
+        // the SSE stream that send() is about to start.
+        skipNextClearRef.current = true;
         setActiveSession(session.id);
         addMessage({ id: `temp-${Date.now()}`, session_id: session.id, role: 'user', content, created_at: new Date().toISOString() });
         send(baseUrl, session.id, content, { model: session.model, mode: session.mode });
-      } catch {
-        // session creation failed
+      } catch (err) {
+        toast(err instanceof Error ? err.message : '创建会话失败');
       }
     },
     [baseUrl, addSession, setActiveSession, addMessage, send],
