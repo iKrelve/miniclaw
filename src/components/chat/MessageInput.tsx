@@ -5,7 +5,7 @@
  * provider. On selection, passes both providerId and modelId to the parent.
  */
 
-import { useState, useRef, useEffect, type KeyboardEvent } from 'react'
+import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from 'react'
 import { Send, Square, CornerDownLeft, ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useSidecar } from '../../hooks/useSidecar'
@@ -31,9 +31,9 @@ const FALLBACK_GROUPS: ProviderModelGroup[] = [
     provider_name: 'Claude Code',
     provider_type: 'anthropic',
     models: [
-      { value: 'sonnet', label: 'Sonnet 4' },
-      { value: 'opus', label: 'Opus 4' },
-      { value: 'haiku', label: 'Haiku 3.5' },
+      { value: 'sonnet', label: 'Sonnet 4.6' },
+      { value: 'opus', label: 'Opus 4.6' },
+      { value: 'haiku', label: 'Haiku 4.5' },
     ],
   },
 ]
@@ -57,8 +57,8 @@ export function MessageInput({
   const [modelOpen, setModelOpen] = useState(false)
   const modelRef = useRef<HTMLDivElement>(null)
 
-  // Fetch provider model groups
-  useEffect(() => {
+  // Fetch provider model groups from sidecar
+  const fetchGroups = useCallback(() => {
     if (!baseUrl) return
     fetch(`${baseUrl}/providers/models`)
       .then((res) => res.json())
@@ -69,6 +69,18 @@ export function MessageInput({
       })
       .catch(() => {})
   }, [baseUrl])
+
+  // Fetch on mount
+  useEffect(() => fetchGroups(), [fetchGroups])
+
+  // Re-fetch after streaming ends — SDK captures real models during first chat
+  const prevStreaming = useRef(false)
+  useEffect(() => {
+    if (prevStreaming.current && !isStreaming) {
+      fetchGroups()
+    }
+    prevStreaming.current = isStreaming
+  }, [isStreaming, fetchGroups])
 
   // Close model dropdown on click outside
   useEffect(() => {

@@ -25,6 +25,7 @@ import type { McpServerConfig, TokenUsage, PermissionRequestEvent } from '../../
 import type { PermissionResult } from '@anthropic-ai/claude-agent-sdk'
 import { getSetting, getProvider, updateSdkSessionId } from '../db'
 import { findClaudeBinary, getExpandedPath } from './platform'
+import { captureModels } from './sdk-capabilities'
 import { logger } from '../utils/logger'
 import os from 'os'
 import fs from 'fs'
@@ -387,6 +388,11 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
         })
 
         const conversation = query({ prompt, options: queryOptions })
+
+        // Fire-and-forget: capture SDK-reported models for the model selector.
+        // Uses providerId so different providers get separate caches.
+        const capProviderId = providerId || 'env'
+        captureModels(conversation, capProviderId).catch(() => {})
 
         let tokenUsage: TokenUsage | null = null
         let messageCount = 0

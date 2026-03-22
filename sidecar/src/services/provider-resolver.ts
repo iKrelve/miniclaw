@@ -21,9 +21,9 @@ export interface CatalogModel {
 const MODEL_CATALOG: Record<string, CatalogModel[]> = {
   anthropic: [
     // SDK shorthand names — used by Claude Code SDK and compatible proxies
-    { id: 'sonnet', name: 'Sonnet 4', contextWindow: 200000, provider: 'anthropic' },
-    { id: 'opus', name: 'Opus 4', contextWindow: 200000, provider: 'anthropic' },
-    { id: 'haiku', name: 'Haiku 3.5', contextWindow: 200000, provider: 'anthropic' },
+    { id: 'sonnet', name: 'Sonnet 4.6', contextWindow: 200000, provider: 'anthropic' },
+    { id: 'opus', name: 'Opus 4.6', contextWindow: 200000, provider: 'anthropic' },
+    { id: 'haiku', name: 'Haiku 4.5', contextWindow: 200000, provider: 'anthropic' },
   ],
   openai: [
     { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, provider: 'openai' },

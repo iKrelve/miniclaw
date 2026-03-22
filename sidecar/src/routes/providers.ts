@@ -13,6 +13,7 @@ import {
   getSetting,
 } from '../db'
 import { getModelsForProvider } from '../services/provider-resolver'
+import { getCachedModels } from '../services/sdk-capabilities'
 import type { ProviderModelGroup } from '../../../shared/types'
 
 const providerRoutes = new Hono()
@@ -45,16 +46,25 @@ providerRoutes.get('/models', (c) => {
   const groups: ProviderModelGroup[] = []
 
   // 1) Built-in "env" group — always present (Claude Code SDK default path)
-  //    Uses SDK shorthand names as values (sonnet/opus/haiku)
+  //    After the first chat, SDK-discovered models replace these defaults.
+  const defaultModels = [
+    { value: 'sonnet', label: 'Sonnet 4.6' },
+    { value: 'opus', label: 'Opus 4.6' },
+    { value: 'haiku', label: 'Haiku 4.5' },
+  ]
+
+  // Use SDK-discovered models if available (populated after first chat)
+  const sdkModels = getCachedModels('env')
+  const envModels =
+    sdkModels.length > 0
+      ? sdkModels.map((m) => ({ value: m.value, label: m.displayName }))
+      : defaultModels
+
   groups.push({
     provider_id: 'env',
     provider_name: 'Claude Code',
     provider_type: 'anthropic',
-    models: [
-      { value: 'sonnet', label: 'Sonnet 4' },
-      { value: 'opus', label: 'Opus 4' },
-      { value: 'haiku', label: 'Haiku 3.5' },
-    ],
+    models: envModels,
   })
 
   // 2) Build a group for each user-configured provider
