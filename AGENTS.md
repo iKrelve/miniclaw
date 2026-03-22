@@ -102,12 +102,13 @@ The application is a **three-process architecture**:
 
 | Command | Purpose |
 |---------|---------|
-| `bun run tauri dev` | **Full dev mode**: starts Vite (port 1420) + compiles Rust + launches Tauri window |
-| `bun run dev` | Vite dev server only (no Tauri, no sidecar) |
-| `cd sidecar && bun run dev` | Run sidecar standalone (for debugging API independently) |
-| `cd sidecar && bun run build` | Build sidecar to `src-tauri/binaries/sidecar-{triple}` |
-| `bun run build` | TypeScript check + Vite production build |
-| `bun run tauri build` | Full production build (Rust + sidecar + renderer → distributable app) |
+| `bun run dev` | **Full dev mode**: starts Vite (port 1420) + compiles Rust + launches Tauri window |
+| `bun run dev:web` | Vite dev server only (debug UI without Tauri) |
+| `bun run dev:sidecar` | Run sidecar standalone (debug API independently) |
+| `bun run build:sidecar` | Build sidecar to `src-tauri/binaries/sidecar-{triple}` |
+| `bun run build` | **Full production build**: sidecar + frontend + Tauri packaging (DMG/installer) |
+| `bun run build:frontend` | TypeScript check + Vite production build (frontend only) |
+| `bun run setup` | **First-time setup**: install all deps + build sidecar binary |
 
 ### Prerequisites
 
@@ -120,13 +121,11 @@ The application is a **three-process architecture**:
 
 ```bash
 cd miniclaw
-bun install                # Frontend dependencies
-cd sidecar && bun install  # Sidecar dependencies
-cd ..
-cd sidecar && bun run build  # Build sidecar binary for Tauri
-cd ..
-bun run tauri dev          # Start dev mode
+bun run setup              # Install all deps (root + sidecar) + build sidecar binary
+bun run dev                # Start full dev mode
 ```
+
+> `bun install` automatically triggers `postinstall` which installs sidecar dependencies too.
 
 ## Key Architectural Patterns
 
