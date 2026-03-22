@@ -65,10 +65,20 @@ export function MessageInput({
       .then((data) => {
         if (data.groups && data.groups.length > 0) {
           setGroups(data.groups)
+          // Auto-select the default provider if user hasn't chosen one yet
+          const defaultPid = data.default_provider_id as string
+          if (defaultPid && !currentProviderId) {
+            const group = (data.groups as ProviderModelGroup[]).find(
+              (g) => g.provider_id === defaultPid,
+            )
+            if (group && group.models.length > 0) {
+              onModelChange(defaultPid, group.models[0].value)
+            }
+          }
         }
       })
       .catch(() => {})
-  }, [baseUrl])
+  }, [baseUrl, currentProviderId, onModelChange])
 
   // Fetch on mount
   useEffect(() => fetchGroups(), [fetchGroups])

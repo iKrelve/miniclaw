@@ -343,6 +343,42 @@ export function deleteProvider(id: string) {
   getDb().prepare('DELETE FROM api_providers WHERE id = ?').run(id)
 }
 
+/**
+ * Find a provider by name. Used for auto-registration (e.g. mc proxy).
+ */
+export function findProviderByName(name: string) {
+  const row = getDb().prepare('SELECT * FROM api_providers WHERE name = ?').get(name) as
+    | Record<string, unknown>
+    | undefined
+  if (row && typeof row.api_key === 'string') {
+    row.api_key = decrypt(row.api_key)
+  }
+  return row
+}
+
+/**
+ * Upsert a provider by name — create if not exists, update credentials if exists.
+ * Returns the provider ID.
+ */
+export function upsertProvider(opts: {
+  name: string
+  type: string
+  api_key: string
+  base_url: string
+}): string {
+  const existing = findProviderByName(opts.name)
+  if (existing) {
+    // Update credentials (they may have been refreshed)
+    updateProvider(existing.id as string, {
+      api_key: opts.api_key,
+      base_url: opts.base_url,
+    })
+    return existing.id as string
+  }
+  const provider = createProvider(opts)
+  return provider.id as string
+}
+
 export function activateProvider(id: string) {
   const d = getDb()
   d.prepare('UPDATE api_providers SET is_active = 0').run()

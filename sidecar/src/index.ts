@@ -153,6 +153,30 @@ logger.info('startup', 'Loaded .env.local', {
   hasCustomHeaders: !!loadedVars.ANTHROPIC_CUSTOM_HEADERS,
 })
 
+// Auto-register mc proxy as a DB provider so it appears as its own group
+// in the model selector (instead of hiding inside the "Claude Code" env group).
+if (
+  loadedVars.PROXY_CLI_COMMAND &&
+  loadedVars.ANTHROPIC_BASE_URL &&
+  loadedVars.ANTHROPIC_AUTH_TOKEN
+) {
+  try {
+    const { upsertProvider, activateProvider } = await import('./db')
+    const id = upsertProvider({
+      name: 'MCopilot',
+      type: 'anthropic',
+      api_key: loadedVars.ANTHROPIC_AUTH_TOKEN,
+      base_url: loadedVars.ANTHROPIC_BASE_URL,
+    })
+    activateProvider(id)
+    logger.info('startup', 'Auto-registered MCopilot provider', { id })
+  } catch (err) {
+    logger.warn('startup', 'Failed to auto-register MCopilot provider', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { getAvailablePort } from './utils/port'

@@ -44,47 +44,64 @@ providerRoutes.post('/', async (c) => {
  */
 providerRoutes.get('/models', (c) => {
   const groups: ProviderModelGroup[] = []
-
-  // 1) Built-in "env" group — always present (Claude Code SDK default path)
-  //    After the first chat, SDK-discovered models replace these defaults.
-  const defaultModels = [
-    { value: 'sonnet', label: 'Sonnet 4.6' },
-    { value: 'opus', label: 'Opus 4.6' },
-    { value: 'haiku', label: 'Haiku 4.5' },
-  ]
-
-  // Use SDK-discovered models if available (populated after first chat)
-  const sdkModels = getCachedModels('env')
-  const envModels =
-    sdkModels.length > 0
-      ? sdkModels.map((m) => ({ value: m.value, label: m.displayName }))
-      : defaultModels
-
-  groups.push({
-    provider_id: 'env',
-    provider_name: 'Claude Code',
-    provider_type: 'anthropic',
-    models: envModels,
-  })
-
-  // 2) Build a group for each user-configured provider
   const providers = listProviders()
-  for (const provider of providers) {
-    const type = (provider.type as string) || 'anthropic'
-    const catalog = getModelsForProvider(type)
-    const models = catalog.map((m) => ({
-      value: m.id,
-      label: m.name,
-    }))
 
-    // If the catalog is empty for this provider type (e.g. custom),
-    // add a placeholder so the group still appears
-    if (models.length === 0) {
-      models.push({ value: 'default', label: type })
+  // Check if any DB provider is an auto-registered proxy (MCopilot etc.)
+  // If so, skip the env group to avoid showing duplicate model lists.
+  const hasProxy = providers.some(
+    (p) => (p.name as string) === 'MCopilot' || !!(p.base_url as string),
+  )
+
+  // 1) Built-in "env" group — only shown when no proxy provider is registered.
+  //    After the first chat, SDK-discovered models replace the static defaults.
+  if (!hasProxy) {
+    const defaultModels = [
+      { value: 'sonnet', label: 'Sonnet 4.6' },
+      { value: 'opus', label: 'Opus 4.6' },
+      { value: 'haiku', label: 'Haiku 4.5' },
+    ]
+    const sdkModels = getCachedModels('env')
+    const envModels =
+      sdkModels.length > 0
+        ? sdkModels.map((m) => ({ value: m.value, label: m.displayName }))
+        : defaultModels
+
+    groups.push({
+      provider_id: 'env',
+      provider_name: 'Claude Code',
+      provider_type: 'anthropic',
+      models: envModels,
+    })
+  }
+
+  // 2) Build a group for each user-configured provider (including auto-registered MCopilot)
+  for (const provider of providers) {
+    const pid = provider.id as string
+    const type = (provider.type as string) || 'anthropic'
+
+    // Prefer SDK-discovered models (cached after first chat with this provider)
+    const cached = getCachedModels(pid)
+    let models: { value: string; label: string }[]
+
+    if (cached.length > 0) {
+      models = cached.map((m) => ({ value: m.value, label: m.displayName }))
+    } else {
+      // Also try 'env' cache — mc proxy uses env path under the hood
+      const envCached = getCachedModels('env')
+      if (envCached.length > 0) {
+        models = envCached.map((m) => ({ value: m.value, label: m.displayName }))
+      } else {
+        // Fall back to static catalog
+        const catalog = getModelsForProvider(type)
+        models = catalog.map((m) => ({ value: m.id, label: m.name }))
+        if (models.length === 0) {
+          models.push({ value: 'default', label: type })
+        }
+      }
     }
 
     groups.push({
-      provider_id: provider.id as string,
+      provider_id: pid,
       provider_name: (provider.name as string) || type,
       provider_type: type,
       models,
@@ -93,7 +110,9 @@ providerRoutes.get('/models', (c) => {
 
   // Determine default provider
   const defaultId =
-    getSetting('default_provider_id') || (providers.find((p) => p.is_active)?.id as string) || 'env'
+    getSetting('default_provider_id') ||
+    (providers.find((p) => p.is_active)?.id as string) ||
+    (groups[0]?.provider_id ?? 'env')
 
   return c.json({ groups, default_provider_id: defaultId })
 })

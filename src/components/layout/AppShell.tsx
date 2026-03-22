@@ -1,7 +1,12 @@
 /**
  * AppShell — Main application layout (CodePilot-aligned three-column).
  *
- * NavRail (56px icons) | ChatListPanel (240px, collapsible) | [TopBar + Content]
+ * NavRail (56px icons) | ChatListPanel (240px, collapsible, chat-only) | [TopBar + Content]
+ *
+ * Key interaction rules (matching CodePilot):
+ * - ChatListPanel is only shown when currentView === 'chat'
+ * - Clicking Chat icon in NavRail: if not on chat, navigate + open list; if on chat, toggle list
+ * - Clicking any other nav icon: switch view (ChatListPanel auto-hides)
  */
 
 import { useState, useCallback } from 'react'
@@ -21,6 +26,8 @@ export function AppShell() {
   const [currentView, setCurrentView] = useState('chat')
   const [chatListOpen, setChatListOpen] = useState(true)
 
+  const isChatView = currentView === 'chat'
+
   const handleNavigate = useCallback((view: string) => {
     setCurrentView(view)
     // Auto-open chat list when navigating to chat
@@ -34,7 +41,6 @@ export function AppShell() {
   }, [])
 
   const handleSelectSession = useCallback(() => {
-    // Ensure we're on the chat view when selecting a session
     setCurrentView('chat')
   }, [])
 
@@ -61,25 +67,19 @@ export function AppShell() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
-      {/* Column 1: NavRail (icon navigation) */}
       <NavRail
         currentView={currentView}
         onNavigate={handleNavigate}
         onToggleChatList={handleToggleChatList}
       />
 
-      {/* Column 2: ChatListPanel (collapsible session list) */}
-      <ChatListPanel open={chatListOpen} onSelectSession={handleSelectSession} />
+      {/* ChatListPanel only renders on Chat view */}
+      {isChatView && <ChatListPanel open={chatListOpen} onSelectSession={handleSelectSession} />}
 
-      {/* Column 3: Main content area */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <UnifiedTopBar currentView={currentView} />
         <UpdateBanner />
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <main className="relative flex-1 overflow-hidden flex flex-col">{renderContent()}</main>
-          </div>
-        </div>
+        <main className="relative flex-1 overflow-hidden flex flex-col">{renderContent()}</main>
       </div>
     </div>
   )
