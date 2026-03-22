@@ -37,6 +37,10 @@ export function ChatView() {
     streamingText,
     isStreaming,
     messages: streamEvents,
+    toolUses,
+    toolResults,
+    statusText,
+    streamingToolOutput,
     send,
     interrupt,
     clear,
@@ -118,7 +122,7 @@ export function ChatView() {
     async (content: string) => {
       if (!baseUrl) return
 
-      // Resolve working directory: cached → picker → abort
+      // Resolve working directory: cached -> picker -> abort
       let dir = getEffectiveDir()
       if (!dir) {
         dir = await pickDirectory()
@@ -267,13 +271,16 @@ export function ChatView() {
 
   return (
     <FileDropZone onFilesDropped={handleFilesDropped} disabled={!ready}>
-      {/* Session header removed — now in UnifiedTopBar */}
-
       <MessageList
         messages={messages}
-        streamingText={streamingText}
-        streamEvents={streamEvents}
+        streamingContent={streamingText}
         isStreaming={isStreaming}
+        toolUses={toolUses}
+        toolResults={toolResults}
+        streamingToolOutput={streamingToolOutput}
+        statusText={statusText}
+        streamEvents={streamEvents}
+        onForceStop={handleInterrupt}
         onPermissionAllow={handlePermissionAllow}
         onPermissionDeny={handlePermissionDeny}
       />

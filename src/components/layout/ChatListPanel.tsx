@@ -1,14 +1,7 @@
 /**
  * ChatListPanel — Collapsible session list panel (CodePilot-aligned).
  *
- * Width: 240px. Slides in/out via NavRail Chat button.
- * Features (matching CodePilot):
- * - ConnectionStatus in header
- * - "New Chat" + "Open Project Folder" buttons
- * - Search bar
- * - Sessions grouped by project, collapsible groups with "+" to create in that project
- * - Hover reveals delete button (no right-click needed)
- * - Version footer
+ * Uses Radix Dialog for delete confirmations (window.confirm is broken in Tauri webview).
  */
 
 import { useEffect, useCallback, useState, useRef } from 'react'
@@ -20,16 +13,22 @@ import {
   TooltipProvider,
   TooltipPortal,
 } from '@radix-ui/react-tooltip'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog'
 import { cn } from '../../lib/utils'
 import { useAppStore } from '../../stores'
 import { useSidecar } from '../../hooks/useSidecar'
 import { useDirectoryPicker } from '../../hooks/useDirectoryPicker'
-import logo from '../../assets/logo.png'
 
 interface ChatListPanelProps {
   open: boolean
   onSelectSession: (id: string) => void
 }
+
+/** Pending delete confirmation state */
+type PendingDelete =
+  | { type: 'session'; id: string; title: string }
+  | { type: 'project'; dir: string; name: string; count: number }
+  | null
 
 export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
   const { baseUrl } = useSidecar()
@@ -39,6 +38,7 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
   const [search, setSearch] = useState('')
   const [hovered, setHovered] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+  const [pending, setPending] = useState<PendingDelete>(null)
 
   // Load sessions on mount
   useEffect(() => {
@@ -114,20 +114,49 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
     }
   }, [pickDirectory, createSessionWithDir])
 
-  const handleDeleteSession = useCallback(
-    async (e: React.MouseEvent, id: string) => {
+  // Stage a session for deletion (opens confirm dialog)
+  const requestDeleteSession = useCallback((e: React.MouseEvent, id: string, title: string) => {
+    e.stopPropagation()
+    setPending({ type: 'session', id, title })
+  }, [])
+
+  // Stage a project group for deletion (opens confirm dialog)
+  const requestDeleteProject = useCallback(
+    (e: React.MouseEvent, dir: string) => {
       e.stopPropagation()
-      if (!baseUrl) return
-      if (!confirm('确定删除这个会话吗？')) return
+      const count = sessions.filter((s) => (s.working_directory || '') === dir).length
+      const name = dir.split('/').filter(Boolean).pop() || dir
+      setPending({ type: 'project', dir, name, count })
+    },
+    [sessions],
+  )
+
+  // Execute the confirmed deletion
+  const executeDelete = useCallback(async () => {
+    if (!pending || !baseUrl) {
+      setPending(null)
+      return
+    }
+    if (pending.type === 'session') {
       try {
-        await fetch(`${baseUrl}/sessions/${id}`, { method: 'DELETE' })
-        removeSession(id)
+        await fetch(`${baseUrl}/sessions/${pending.id}`, { method: 'DELETE' })
+        removeSession(pending.id)
       } catch {
         // error
       }
-    },
-    [baseUrl, removeSession],
-  )
+    } else {
+      const toDelete = sessions.filter((s) => (s.working_directory || '') === pending.dir)
+      for (const s of toDelete) {
+        try {
+          await fetch(`${baseUrl}/sessions/${s.id}`, { method: 'DELETE' })
+          removeSession(s.id)
+        } catch {
+          // continue
+        }
+      }
+    }
+    setPending(null)
+  }, [pending, baseUrl, sessions, removeSession])
 
   const handleCreateInProject = useCallback(
     async (e: React.MouseEvent, dir: string) => {
@@ -139,30 +168,6 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
       }
     },
     [createSessionWithDir],
-  )
-
-  // Delete all sessions in a project group
-  const handleDeleteProject = useCallback(
-    async (e: React.MouseEvent, dir: string) => {
-      e.stopPropagation()
-      if (!baseUrl) return
-      const toDelete = sessions.filter((s) => (s.working_directory || '') === dir)
-      if (
-        !confirm(
-          `确定删除「${dir.split('/').filter(Boolean).pop() || dir}」下的 ${toDelete.length} 个会话吗？`,
-        )
-      )
-        return
-      for (const s of toDelete) {
-        try {
-          await fetch(`${baseUrl}/sessions/${s.id}`, { method: 'DELETE' })
-          removeSession(s.id)
-        } catch {
-          // continue deleting others
-        }
-      }
-    },
-    [baseUrl, sessions, removeSession],
   )
 
   const toggleGroup = useCallback((dir: string) => {
@@ -185,14 +190,8 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
   return (
     <TooltipProvider delayDuration={200}>
       <aside className="flex h-full w-60 shrink-0 flex-col overflow-hidden bg-[var(--sidebar)]/80 backdrop-blur-xl border-r border-[var(--sidebar-border)]">
-        {/* Header — app icon + extra top padding for macOS traffic lights */}
-        <div className="flex h-12 shrink-0 items-center gap-2 px-3 mt-5">
-          <img src={logo} alt="小龙虾" className="w-6 h-6 rounded" />
-          <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">小龙虾</span>
-        </div>
-
-        {/* New Chat + Open Folder */}
-        <div className="flex items-center gap-2 px-3 pb-2">
+        {/* New Chat + Open Folder — top-aligned with NavRail logo */}
+        <div className="flex items-center gap-2 px-3 pb-2 pt-7">
           <button
             onClick={handleNewChat}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 h-8 text-xs font-medium text-zinc-700 dark:text-zinc-300 transition-colors"
@@ -239,7 +238,6 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
 
         {/* Session list grouped by project */}
         <div className="flex-1 overflow-y-auto px-3">
-          {/* Section title */}
           <div className="px-1 pt-1 pb-1.5">
             <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]/60">
               会话
@@ -259,7 +257,7 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
 
               return (
                 <div key={group.dir || '__none'} className="mt-1 first:mt-0">
-                  {/* Project folder header — collapsible + hover "+" button */}
+                  {/* Project folder header */}
                   {group.dir && (
                     <div
                       className="group/folder flex items-center gap-1 px-1 py-1 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800/50 cursor-pointer"
@@ -282,7 +280,7 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
                       >
                         {dirName}
                       </span>
-                      {/* Hover actions: create session + delete project */}
+                      {/* Hover actions */}
                       <div className="opacity-0 group-hover/folder:opacity-100 flex items-center gap-0.5 shrink-0 transition-all">
                         <button
                           onClick={(e) => handleCreateInProject(e, group.dir)}
@@ -292,7 +290,7 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
                           <Plus size={12} />
                         </button>
                         <button
-                          onClick={(e) => handleDeleteProject(e, group.dir)}
+                          onClick={(e) => requestDeleteProject(e, group.dir)}
                           className="flex h-5 w-5 items-center justify-center rounded text-[var(--muted-foreground)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                           title="删除此项目的所有会话"
                         >
@@ -302,7 +300,7 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
                     </div>
                   )}
 
-                  {/* Session items — hidden when collapsed */}
+                  {/* Session items */}
                   {!isCollapsed && (
                     <div className="mt-0.5 flex flex-col gap-0.5">
                       {group.sessions.map((session) => {
@@ -330,10 +328,11 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
                             >
                               {session.title || 'New Chat'}
                             </button>
-                            {/* Inline delete button on hover */}
                             {(isHovered || isActive) && (
                               <button
-                                onClick={(e) => handleDeleteSession(e, session.id)}
+                                onClick={(e) =>
+                                  requestDeleteSession(e, session.id, session.title || 'New Chat')
+                                }
                                 className="absolute right-1 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                               >
                                 <Trash2 size={12} />
@@ -355,6 +354,36 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
           <span className="text-[10px] text-[var(--muted-foreground)]/40">v0.1.0</span>
         </div>
       </aside>
+
+      {/* Delete confirmation dialog (Radix Dialog, not window.confirm) */}
+      <Dialog open={!!pending} onOpenChange={(open) => !open && setPending(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">确认删除</DialogTitle>
+            <DialogDescription className="pt-1">
+              {pending?.type === 'session'
+                ? `确定要删除会话「${pending.title}」吗？此操作不可撤销。`
+                : pending?.type === 'project'
+                  ? `确定要删除「${pending.name}」下的 ${pending.count} 个会话吗？此操作不可撤销。`
+                  : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4">
+            <button
+              onClick={() => setPending(null)}
+              className="px-3 py-1.5 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={executeDelete}
+              className="px-3 py-1.5 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
+            >
+              删除
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </TooltipProvider>
   )
 }

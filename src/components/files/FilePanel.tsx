@@ -7,7 +7,7 @@ import { useSidecar } from '../../hooks/useSidecar'
 import { Folder, File, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 import { Button } from '../ui/button'
 import { cn } from '../../lib/utils'
-import { MarkdownRenderer } from '../chat/MarkdownRenderer'
+import { MessageResponse } from '../ai-elements/message'
 
 interface FileNode {
   name: string
@@ -152,7 +152,7 @@ export function FilePanel() {
                 </div>
               </div>
             </div>
-            <MarkdownRenderer content={`\`\`\`${preview.language}\n${preview.content}\n\`\`\``} />
+            <MessageResponse>{`\`\`\`${preview.language}\n${preview.content}\n\`\`\``}</MessageResponse>
           </div>
         ) : (
           <div className="flex items-center justify-center h-full text-zinc-400 text-sm">

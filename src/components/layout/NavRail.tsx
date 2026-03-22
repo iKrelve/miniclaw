@@ -12,6 +12,7 @@
  */
 
 import { MessageSquare, Sparkles, Puzzle, Settings } from 'lucide-react'
+import logo from '../../assets/logo.png'
 import {
   Tooltip,
   TooltipContent,
@@ -44,7 +45,10 @@ export function NavRail({ currentView, onNavigate, onToggleChatList }: NavRailPr
 
   return (
     <TooltipProvider delayDuration={200}>
-      <aside className="flex w-14 shrink-0 flex-col items-center bg-[var(--sidebar)]/80 backdrop-blur-xl border-r border-[var(--sidebar-border)] pb-3 pt-10">
+      <aside className="flex w-14 shrink-0 flex-col items-center bg-[var(--sidebar)]/80 backdrop-blur-xl border-r border-[var(--sidebar-border)] pb-3 pt-7">
+        {/* App logo — top-aligned with ChatListPanel "新对话" button */}
+        <img src={logo} alt="小龙虾" className="w-7 h-7 rounded-lg mb-3" />
+
         {/* Main navigation icons */}
         <nav className="flex flex-1 flex-col items-center gap-1">
           {navItems.map((item) => {

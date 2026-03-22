@@ -1,6 +1,8 @@
 /**
  * useSSEStream — SSE stream consumption hook for chat messages.
  * Connects to the sidecar's POST /chat endpoint and parses SSE events.
+ *
+ * Separates tool_use / tool_result / status events for structured rendering.
  */
 
 import { useState, useCallback, useRef } from 'react'
@@ -19,10 +21,26 @@ export interface StreamMessage {
   data: unknown
 }
 
+export interface ToolUseInfo {
+  id: string
+  name: string
+  input: unknown
+}
+
+export interface ToolResultInfo {
+  tool_use_id: string
+  content: string
+  is_error?: boolean
+}
+
 interface UseSSEStreamResult {
   messages: StreamMessage[]
   streamingText: string
   isStreaming: boolean
+  toolUses: ToolUseInfo[]
+  toolResults: ToolResultInfo[]
+  statusText: string
+  streamingToolOutput: string
   send: (
     baseUrl: string,
     sessionId: string,
@@ -41,11 +59,19 @@ export function useSSEStream(): UseSSEStreamResult {
   const [messages, setMessages] = useState<StreamMessage[]>([])
   const [streamingText, setStreamingText] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
+  const [toolUses, setToolUses] = useState<ToolUseInfo[]>([])
+  const [toolResults, setToolResults] = useState<ToolResultInfo[]>([])
+  const [statusText, setStatusText] = useState('')
+  const [streamingToolOutput, setStreamingToolOutput] = useState('')
   const abortRef = useRef<AbortController | null>(null)
 
   const clear = useCallback(() => {
     setMessages([])
     setStreamingText('')
+    setToolUses([])
+    setToolResults([])
+    setStatusText('')
+    setStreamingToolOutput('')
   }, [])
 
   const send = useCallback(
@@ -55,7 +81,7 @@ export function useSSEStream(): UseSSEStreamResult {
       content: string,
       options?: { model?: string; mode?: string; providerId?: string },
     ) => {
-      // Abort previous stream if any
+      // Abort previous stream
       if (abortRef.current) {
         abortRef.current.abort()
       }
@@ -65,6 +91,10 @@ export function useSSEStream(): UseSSEStreamResult {
 
       setIsStreaming(true)
       setStreamingText('')
+      setToolUses([])
+      setToolResults([])
+      setStatusText('')
+      setStreamingToolOutput('')
 
       try {
         const res = await fetch(`${baseUrl}/chat`, {
@@ -95,7 +125,7 @@ export function useSSEStream(): UseSSEStreamResult {
 
         const decoder = new TextDecoder()
         let buffer = ''
-        let accumulatedText = ''
+        let text = ''
 
         while (true) {
           const { done, value } = await reader.read()
@@ -106,21 +136,52 @@ export function useSSEStream(): UseSSEStreamResult {
           buffer = lines.pop() || ''
 
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const event = JSON.parse(line.slice(6)) as StreamMessage
+            if (!line.startsWith('data: ')) continue
+            try {
+              const event = JSON.parse(line.slice(6)) as StreamMessage
 
-                if (event.type === 'text' && typeof event.data === 'string') {
-                  accumulatedText += event.data
-                  setStreamingText(accumulatedText)
-                } else if (event.type === 'done') {
-                  // Stream complete
-                } else {
-                  setMessages((prev) => [...prev, event])
+              switch (event.type) {
+                case 'text':
+                  if (typeof event.data === 'string') {
+                    text += event.data
+                    setStreamingText(text)
+                  }
+                  break
+
+                case 'tool_use': {
+                  const tu = event.data as ToolUseInfo
+                  setToolUses((prev) => [...prev, tu])
+                  break
                 }
-              } catch {
-                // ignore malformed SSE
+
+                case 'tool_result': {
+                  const tr = event.data as ToolResultInfo
+                  setToolResults((prev) => [...prev, tr])
+                  break
+                }
+
+                case 'status':
+                  if (typeof event.data === 'string') {
+                    setStatusText(event.data)
+                  }
+                  break
+
+                case 'tool_output':
+                  if (typeof event.data === 'string') {
+                    setStreamingToolOutput((prev) => prev + event.data)
+                  }
+                  break
+
+                case 'done':
+                  // Stream complete — handled by finally block
+                  break
+
+                default:
+                  setMessages((prev) => [...prev, event])
+                  break
               }
+            } catch {
+              // ignore malformed SSE
             }
           }
         }
@@ -140,12 +201,10 @@ export function useSSEStream(): UseSSEStreamResult {
   )
 
   const interrupt = useCallback((baseUrl: string, sessionId: string) => {
-    // Abort the fetch
     if (abortRef.current) {
       abortRef.current.abort()
       abortRef.current = null
     }
-    // Also notify the sidecar
     fetch(`${baseUrl}/chat/interrupt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -154,5 +213,16 @@ export function useSSEStream(): UseSSEStreamResult {
     setIsStreaming(false)
   }, [])
 
-  return { messages, streamingText, isStreaming, send, interrupt, clear }
+  return {
+    messages,
+    streamingText,
+    isStreaming,
+    toolUses,
+    toolResults,
+    statusText,
+    streamingToolOutput,
+    send,
+    interrupt,
+    clear,
+  }
 }

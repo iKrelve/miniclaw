@@ -1,0 +1,292 @@
+/**
+ * ToolActionsGroup — compact collapsible group of tool calls.
+ * Shows a summary header with counts, and expands to show individual tool rows.
+ */
+
+import { useState, createElement } from 'react'
+import { motion, AnimatePresence } from 'motion/react'
+import type { Icon } from '@phosphor-icons/react'
+import {
+  File,
+  NotePencil,
+  Terminal,
+  MagnifyingGlass,
+  Wrench,
+  SpinnerGap,
+  CheckCircle,
+  XCircle,
+  CaretRight,
+} from '@phosphor-icons/react'
+import { cn } from '../../lib/utils'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface ToolAction {
+  id?: string
+  name: string
+  input: unknown
+  result?: string
+  isError?: boolean
+}
+
+interface ToolActionsGroupProps {
+  tools: ToolAction[]
+  isStreaming?: boolean
+  streamingToolOutput?: string
+}
+
+// ---------------------------------------------------------------------------
+// Tool categorisation
+// ---------------------------------------------------------------------------
+
+type ToolCategory = 'read' | 'write' | 'bash' | 'search' | 'other'
+
+function getToolCategory(name: string): ToolCategory {
+  const lower = name.toLowerCase()
+  if (lower === 'read' || lower === 'readfile' || lower === 'read_file') return 'read'
+  if (
+    lower === 'write' ||
+    lower === 'edit' ||
+    lower === 'writefile' ||
+    lower === 'write_file' ||
+    lower === 'create_file' ||
+    lower === 'createfile' ||
+    lower === 'notebookedit' ||
+    lower === 'notebook_edit'
+  )
+    return 'write'
+  if (
+    lower === 'bash' ||
+    lower === 'execute' ||
+    lower === 'run' ||
+    lower === 'shell' ||
+    lower === 'execute_command'
+  )
+    return 'bash'
+  if (
+    lower === 'search' ||
+    lower === 'glob' ||
+    lower === 'grep' ||
+    lower === 'find_files' ||
+    lower === 'search_files' ||
+    lower === 'websearch' ||
+    lower === 'web_search'
+  )
+    return 'search'
+  return 'other'
+}
+
+function getToolIcon(category: ToolCategory): Icon {
+  switch (category) {
+    case 'read':
+      return File
+    case 'write':
+      return NotePencil
+    case 'bash':
+      return Terminal
+    case 'search':
+      return MagnifyingGlass
+    case 'other':
+      return Wrench
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Summary helpers
+// ---------------------------------------------------------------------------
+
+function extractFilename(path: string): string {
+  const parts = path.split('/')
+  return parts[parts.length - 1] || path
+}
+
+function getToolSummary(name: string, input: unknown, category: ToolCategory): string {
+  const inp = input as Record<string, unknown> | undefined
+  if (!inp) return name
+
+  switch (category) {
+    case 'read':
+    case 'write': {
+      const path = (inp.file_path || inp.path || inp.filePath || '') as string
+      return path ? extractFilename(path) : name
+    }
+    case 'bash': {
+      const cmd = (inp.command || inp.cmd || '') as string
+      if (cmd) return cmd.length > 60 ? cmd.slice(0, 57) + '...' : cmd
+      return name
+    }
+    case 'search': {
+      const pattern = (inp.pattern || inp.query || inp.glob || '') as string
+      return pattern ? `"${pattern.length > 50 ? pattern.slice(0, 47) + '...' : pattern}"` : name
+    }
+    default:
+      return name
+  }
+}
+
+function getFilePath(input: unknown): string {
+  const inp = input as Record<string, unknown> | undefined
+  if (!inp) return ''
+  return (inp.file_path || inp.path || inp.filePath || '') as string
+}
+
+function truncatePath(path: string, maxLen = 50): string {
+  if (path.length <= maxLen) return path
+  return '...' + path.slice(path.length - maxLen + 3)
+}
+
+// ---------------------------------------------------------------------------
+// Status indicator
+// ---------------------------------------------------------------------------
+
+type ToolStatus = 'running' | 'success' | 'error'
+
+function getStatus(tool: ToolAction): ToolStatus {
+  if (tool.result === undefined) return 'running'
+  return tool.isError ? 'error' : 'success'
+}
+
+function StatusDot({ status }: { status: ToolStatus }) {
+  switch (status) {
+    case 'running':
+      return <SpinnerGap size={14} className="shrink-0 animate-spin text-zinc-400" />
+    case 'success':
+      return <CheckCircle size={14} className="shrink-0 text-green-500" />
+    case 'error':
+      return <XCircle size={14} className="shrink-0 text-red-500" />
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Compact row for a single tool action
+// ---------------------------------------------------------------------------
+
+function ToolActionRow({ tool }: { tool: ToolAction }) {
+  const category = getToolCategory(tool.name)
+  const toolIcon = getToolIcon(category)
+  const summary = getToolSummary(tool.name, tool.input, category)
+  const filePath = getFilePath(tool.input)
+  const status = getStatus(tool)
+
+  const label = category === 'bash' ? '' : tool.name
+
+  return (
+    <div className="flex items-center gap-2 px-2 py-1 min-h-[28px] text-xs hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50 rounded-sm transition-colors">
+      {createElement(toolIcon, { size: 14, className: 'shrink-0 text-zinc-500' })}
+
+      {label && <span className="font-medium text-zinc-500 shrink-0">{label}</span>}
+
+      <span className="font-mono text-zinc-400 truncate flex-1">{summary}</span>
+
+      {filePath && (category === 'read' || category === 'write') && (
+        <span className="text-zinc-400/60 text-[11px] font-mono truncate max-w-[200px] hidden sm:inline">
+          {truncatePath(filePath)}
+        </span>
+      )}
+
+      <StatusDot status={status} />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Header summary
+// ---------------------------------------------------------------------------
+
+function getRunningDescription(tools: ToolAction[]): string {
+  const running = tools.filter((t) => t.result === undefined)
+  if (running.length === 0) return ''
+  const last = running[running.length - 1]
+  const category = getToolCategory(last.name)
+  return getToolSummary(last.name, last.input, category)
+}
+
+// ---------------------------------------------------------------------------
+// Main group component
+// ---------------------------------------------------------------------------
+
+export function ToolActionsGroup({ tools, isStreaming = false }: ToolActionsGroupProps) {
+  const hasRunningTool = tools.some((t) => t.result === undefined)
+
+  // Track manual toggle
+  const [userExpanded, setUserExpanded] = useState<boolean | null>(null)
+
+  // Auto-expand when streaming, respect user override
+  const expanded = userExpanded !== null ? userExpanded : hasRunningTool || isStreaming
+
+  if (tools.length === 0) return null
+
+  const runningCount = tools.filter((t) => t.result === undefined).length
+  const doneCount = tools.length - runningCount
+  const runningDesc = getRunningDescription(tools)
+
+  const toggle = () => {
+    setUserExpanded((prev) => (prev !== null ? !prev : !expanded))
+  }
+
+  // Build summary
+  const parts: string[] = []
+  if (runningCount > 0) parts.push(`${runningCount} running`)
+  if (doneCount > 0) parts.push(`${doneCount} completed`)
+  if (runningCount === 0 && isStreaming) parts.push('generating response')
+  if (parts.length === 0) parts.push(`${tools.length} actions`)
+
+  return (
+    <div className="w-full max-w-3xl">
+      {/* Header */}
+      <button
+        type="button"
+        onClick={toggle}
+        className="flex w-full items-center gap-2 py-1 text-xs rounded-sm hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50 transition-colors"
+      >
+        <CaretRight
+          size={12}
+          className={cn(
+            'shrink-0 text-zinc-400 transition-transform duration-200',
+            expanded && 'rotate-90',
+          )}
+        />
+
+        <span className="inline-flex items-center justify-center rounded bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium leading-none text-zinc-500 tabular-nums">
+          {tools.length}
+        </span>
+
+        <span className="text-zinc-400 truncate">{parts.join(' · ')}</span>
+
+        {runningDesc && (
+          <span className="ml-auto text-zinc-400/60 text-[11px] font-mono truncate max-w-[40%]">
+            {runningDesc}
+          </span>
+        )}
+      </button>
+
+      {/* Expanded list */}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0 }}
+            animate={{ height: 'auto' }}
+            exit={{ height: 0 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            style={{ overflow: 'hidden', transformOrigin: 'top' }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.12, ease: 'easeOut' }}
+            >
+              <div className="ml-1.5 mt-0.5 border-l-2 border-zinc-200 dark:border-zinc-700 pl-2">
+                {tools.map((tool, i) => (
+                  <ToolActionRow key={tool.id || `tool-${i}`} tool={tool} />
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}

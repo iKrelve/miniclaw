@@ -1,67 +1,82 @@
 /**
- * MessageList — Renders chat messages with Markdown, tool calls, and permission prompts.
+ * MessageList — Renders chat messages with auto-scroll, tool calls, streaming,
+ * permission prompts, and error display.
+ *
+ * Uses Conversation (use-stick-to-bottom) for smart auto-scroll,
+ * MessageItem for persisted messages, and StreamingMessage for in-progress content.
  */
 
-import { useEffect, useRef, useMemo } from 'react'
-import { cn } from '../../lib/utils'
-import { MarkdownRenderer } from './MarkdownRenderer'
-import { ToolCallBlock } from './ToolCallBlock'
+import { useRef, useEffect, useMemo } from 'react'
+import { useStickToBottomContext } from 'use-stick-to-bottom'
+import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+  ConversationEmptyState,
+} from '../ai-elements/conversation'
+import { MessageItem } from './MessageItem'
+import { StreamingMessage } from './StreamingMessage'
 import { PermissionPrompt } from './PermissionPrompt'
-import type { StreamMessage } from '../../hooks/useSSEStream'
+import type { ToolUseInfo, ToolResultInfo, StreamMessage } from '../../hooks/useSSEStream'
+import logo from '../../assets/logo.png'
+
+/**
+ * Scrolls to bottom when streaming starts or new messages arrive.
+ * Must be rendered inside <Conversation> (StickToBottom provider).
+ */
+function ScrollOnStream({ isStreaming, count }: { isStreaming: boolean; count: number }) {
+  const { scrollToBottom } = useStickToBottomContext()
+  const wasStreaming = useRef(false)
+  const prevCount = useRef(count)
+
+  useEffect(() => {
+    if (count > prevCount.current) scrollToBottom()
+    prevCount.current = count
+  }, [count, scrollToBottom])
+
+  useEffect(() => {
+    if (isStreaming && !wasStreaming.current) scrollToBottom()
+    wasStreaming.current = isStreaming
+  }, [isStreaming, scrollToBottom])
+
+  return null
+}
 
 interface Message {
   id: string
   role: string
   content: string
+  created_at?: string
 }
 
 interface MessageListProps {
   messages: Message[]
-  streamingText: string
-  streamEvents: StreamMessage[]
+  streamingContent: string
   isStreaming: boolean
+  toolUses?: ToolUseInfo[]
+  toolResults?: ToolResultInfo[]
+  streamingToolOutput?: string
+  statusText?: string
+  streamEvents?: StreamMessage[]
+  onForceStop?: () => void
   onPermissionAllow?: (id: string) => void
   onPermissionDeny?: (id: string) => void
 }
 
 export function MessageList({
   messages,
-  streamingText,
-  streamEvents,
+  streamingContent,
   isStreaming,
+  toolUses = [],
+  toolResults = [],
+  streamingToolOutput,
+  statusText,
+  streamEvents = [],
+  onForceStop,
   onPermissionAllow,
   onPermissionDeny,
 }: MessageListProps) {
-  const bottomRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, streamingText, streamEvents])
-
-  // Parse tool events into structured data
-  const toolUses = useMemo(() => {
-    const uses: Array<{ id: string; name: string; input: unknown }> = []
-    for (const e of streamEvents) {
-      if (e.type === 'tool_use') {
-        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data
-        uses.push(data as { id: string; name: string; input: unknown })
-      }
-    }
-    return uses
-  }, [streamEvents])
-
-  const toolResults = useMemo(() => {
-    const results = new Map<string, { tool_use_id: string; content: string; is_error?: boolean }>()
-    for (const e of streamEvents) {
-      if (e.type === 'tool_result') {
-        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data
-        const d = data as { tool_use_id: string; content: string; is_error?: boolean }
-        results.set(d.tool_use_id, d)
-      }
-    }
-    return results
-  }, [streamEvents])
-
+  // Extract permission requests from stream events
   const permissionRequests = useMemo(() => {
     const reqs: Array<{ id: string; tool_name: string; description: string; input: unknown }> = []
     for (const e of streamEvents) {
@@ -73,7 +88,7 @@ export function MessageList({
     return reqs
   }, [streamEvents])
 
-  // Collect error events so they are visible to the user
+  // Extract errors from stream events
   const errors = useMemo(() => {
     const errs: string[] = []
     for (const e of streamEvents) {
@@ -84,84 +99,64 @@ export function MessageList({
     return errs
   }, [streamEvents])
 
+  if (messages.length === 0 && !isStreaming) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <ConversationEmptyState
+          title="小龙虾"
+          description="输入消息开始新对话"
+          icon={<img src={logo} alt="小龙虾" className="w-16 h-16" />}
+        />
+      </div>
+    )
+  }
+
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
-      {messages.map((msg) => (
-        <div
-          key={msg.id}
-          className={cn(
-            'max-w-[85%] rounded-2xl px-4 py-3',
-            msg.role === 'user'
-              ? 'ml-auto bg-blue-500 text-white'
-              : 'mr-auto bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100',
-          )}
-        >
-          {msg.role === 'assistant' ? (
-            <MarkdownRenderer content={msg.content} />
-          ) : (
-            <div className="text-sm whitespace-pre-wrap break-words">{msg.content}</div>
-          )}
-        </div>
-      ))}
+    <Conversation>
+      <ScrollOnStream isStreaming={isStreaming} count={messages.length} />
+      <ConversationContent className="mx-auto max-w-3xl px-4 py-6 gap-6">
+        {messages.map((msg) => (
+          <div key={msg.id} id={`msg-${msg.id}`} className="group">
+            <MessageItem message={msg} />
+          </div>
+        ))}
 
-      {/* Tool calls */}
-      {toolUses.map((tu) => (
-        <div key={tu.id} className="max-w-[85%] mr-auto">
-          <ToolCallBlock toolUse={tu} toolResult={toolResults.get(tu.id)} />
-        </div>
-      ))}
-
-      {/* Permission requests */}
-      {permissionRequests.map((pr) => (
-        <div key={pr.id} className="max-w-[85%] mr-auto">
-          <PermissionPrompt
-            request={pr}
-            onAllow={onPermissionAllow || (() => {})}
-            onDeny={onPermissionDeny || (() => {})}
-          />
-        </div>
-      ))}
-
-      {/* Streaming text with Markdown */}
-      {isStreaming && streamingText && (
-        <div className="mr-auto max-w-[85%] rounded-2xl px-4 py-3 bg-zinc-100 dark:bg-zinc-800">
-          <MarkdownRenderer content={streamingText} />
-          <span className="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-0.5" />
-        </div>
-      )}
-
-      {/* Error messages */}
-      {errors.map((err, i) => (
-        <div
-          key={`err-${i}`}
-          className="mr-auto max-w-[85%] rounded-2xl px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm"
-        >
-          <span className="font-medium">错误：</span>
-          {err}
-        </div>
-      ))}
-
-      {/* Loading indicator */}
-      {isStreaming && !streamingText && toolUses.length === 0 && (
-        <div className="mr-auto max-w-[85%] rounded-2xl px-4 py-3 bg-zinc-100 dark:bg-zinc-800">
-          <div className="flex items-center gap-1">
-            <div
-              className="w-2 h-2 rounded-full bg-zinc-400 animate-bounce"
-              style={{ animationDelay: '0ms' }}
-            />
-            <div
-              className="w-2 h-2 rounded-full bg-zinc-400 animate-bounce"
-              style={{ animationDelay: '150ms' }}
-            />
-            <div
-              className="w-2 h-2 rounded-full bg-zinc-400 animate-bounce"
-              style={{ animationDelay: '300ms' }}
+        {/* Permission requests */}
+        {permissionRequests.map((pr) => (
+          <div key={pr.id} className="max-w-3xl">
+            <PermissionPrompt
+              request={pr}
+              onAllow={onPermissionAllow || (() => {})}
+              onDeny={onPermissionDeny || (() => {})}
             />
           </div>
-        </div>
-      )}
+        ))}
 
-      <div ref={bottomRef} />
-    </div>
+        {/* Streaming assistant message */}
+        {isStreaming && (
+          <StreamingMessage
+            content={streamingContent}
+            isStreaming={isStreaming}
+            toolUses={toolUses}
+            toolResults={toolResults}
+            streamingToolOutput={streamingToolOutput}
+            statusText={statusText}
+            onForceStop={onForceStop}
+          />
+        )}
+
+        {/* Error messages */}
+        {errors.map((err, i) => (
+          <div
+            key={`err-${i}`}
+            className="max-w-3xl rounded-lg px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm"
+          >
+            <span className="font-medium">错误：</span>
+            {err}
+          </div>
+        ))}
+      </ConversationContent>
+      <ConversationScrollButton />
+    </Conversation>
   )
 }

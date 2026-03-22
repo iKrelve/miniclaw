@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useSidecar } from '../../hooks/useSidecar'
 import { Sparkles, Search, Eye } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { MarkdownRenderer } from '../chat/MarkdownRenderer'
+import { MessageResponse } from '../ai-elements/message'
 
 interface Skill {
   name: string
@@ -119,7 +119,7 @@ export function SkillsPanel() {
           <div>
             <h2 className="text-lg font-bold mb-1">{selected.name}</h2>
             <p className="text-xs text-zinc-500 mb-4">{selected.path}</p>
-            <MarkdownRenderer content={selected.content} />
+            <MessageResponse>{selected.content}</MessageResponse>
           </div>
         ) : (
           <div className="flex items-center justify-center h-full text-zinc-400">
