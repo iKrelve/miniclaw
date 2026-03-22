@@ -1,13 +1,14 @@
 /**
- * Logger — pino-based logging to ~/.miniclaw/logs/sidecar.log
+ * Logger — pino-based structured logging to ~/.miniclaw/logs/
  *
- * Uses pino (high-perf structured JSON logger) with multistream:
- *   1. File destination → ~/.miniclaw/logs/sidecar.log (sync write, reliable)
+ * Uses pino.multistream() + pino.destination() (synchronous, in-process)
+ * instead of pino.transport() (worker threads). pino.transport() dynamically
+ * requires target modules at runtime, which breaks inside a compiled
+ * single-binary from `bun build --compile` (node_modules doesn't exist).
+ *
+ * Output:
+ *   1. File → ~/.miniclaw/logs/sidecar.log (async flush, with size-based rotation)
  *   2. stderr → dev console (stdout reserved for Tauri READY protocol)
- *
- * File rotation: pino-roll with size-based rotation (5MB, keep 3 rotated files).
- * Active log file gets a numeric suffix (sidecar.1.log, sidecar.2.log, etc.).
- * A `current.log` symlink always points to the latest active file.
  *
  * Public API: `logger.info(mod, msg, data?)` — unchanged from call sites.
  */
@@ -19,38 +20,57 @@ import os from 'os'
 
 const LOG_DIR = path.join(process.env.MINICLAW_DATA_DIR || path.join(os.homedir(), '.miniclaw'), 'logs')
 const LOG_FILE = path.join(LOG_DIR, 'sidecar.log')
+const MAX_SIZE = 5 * 1024 * 1024 // 5MB per file
+const MAX_ROTATED = 3
 
 // Ensure log directory exists
 if (!fs.existsSync(LOG_DIR)) {
   fs.mkdirSync(LOG_DIR, { recursive: true })
 }
 
-// pino.transport runs worker threads — use this for file + stderr output
+/**
+ * Simple size-based log rotation. Runs in-process, no worker threads.
+ * Shifts: sidecar.log → sidecar.log.1 → .2 → .3 (oldest deleted).
+ */
+function rotate() {
+  try {
+    if (!fs.existsSync(LOG_FILE)) return
+    const stat = fs.statSync(LOG_FILE)
+    if (stat.size < MAX_SIZE) return
+    for (let i = MAX_ROTATED; i >= 1; i--) {
+      const src = i === 1 ? LOG_FILE : `${LOG_FILE}.${i - 1}`
+      const dst = `${LOG_FILE}.${i}`
+      if (i === MAX_ROTATED && fs.existsSync(dst)) fs.unlinkSync(dst)
+      if (fs.existsSync(src)) fs.renameSync(src, dst)
+    }
+  } catch { /* best effort */ }
+}
+
+// Rotate leftover large log from previous run
+rotate()
+
+// In-process multistream: file (async flush) + stderr (sync).
+// No worker threads, compatible with bun build --compile.
+const fileDest = pino.destination({ dest: LOG_FILE, sync: false, mkdir: true })
+const stderrDest = pino.destination({ dest: 2, sync: true })
+
 const pinoInstance = pino(
   {
     level: 'debug',
     timestamp: pino.stdTimeFunctions.isoTime,
   },
-  pino.transport({
-    targets: [
-      {
-        target: 'pino-roll',
-        level: 'debug',
-        options: {
-          file: LOG_FILE,
-          size: '5m',
-          limit: { count: 3 },
-          symlink: true,  // creates current.log → active log
-        },
-      },
-      {
-        target: 'pino/file',
-        level: 'debug',
-        options: { destination: 2 }, // fd 2 = stderr
-      },
-    ],
-  }),
+  pino.multistream([
+    { level: 'debug', stream: fileDest },
+    { level: 'debug', stream: stderrDest },
+  ]),
 )
+
+// Periodic rotation check (every 60s)
+setInterval(() => {
+  rotate()
+  // Reopen file descriptor after rotation so new logs go to the fresh file
+  fileDest.reopen()
+}, 60_000).unref()
 
 /**
  * Wrapper preserving `logger.info(mod, msg, data?)` convention.
@@ -69,7 +89,7 @@ export const logger = {
   warn: (mod: string, msg: string, data?: Record<string, unknown>) => log('warn', mod, msg, data),
   error: (mod: string, msg: string, data?: Record<string, unknown>) => log('error', mod, msg, data),
 
-  /** Log directory — use `current.log` symlink for latest active file */
+  /** Log directory path */
   logDir: LOG_DIR,
 
   /** Underlying pino instance (for advanced use) */
