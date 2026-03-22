@@ -5,7 +5,8 @@
 小龙虾 (MiniClaw) is a desktop AI assistant built with Tauri 2, React 19, and TypeScript. It provides a conversational AI interface powered by the Claude Code SDK (`@anthropic-ai/claude-agent-sdk`), with session management, MCP integration, file browsing, git operations, and multi-provider support.
 
 **Tech stack**: Tauri 2 (Rust) + React 19 + TypeScript 5.9 + Vite 8 + Tailwind CSS 4 + Zustand 5
-**Sidecar runtime**: Bun + Hono HTTP server + better-sqlite3
+**Sidecar runtime**: Bun + Hono HTTP server + bun:sqlite
+**Logging**: pino + pino-roll → `~/.miniclaw/logs/` (structured JSON, size-based rotation)
 **Package manager**: Bun (lock file: `bun.lock`)
 **Toolchain**: Oxlint (linter) + Oxfmt (formatter) + Lefthook (git hooks) + Knip (dead code)
 
@@ -90,7 +91,8 @@ The application is a **three-process architecture**:
 │   │   ├── provider-resolver.ts # Multi-provider + model resolution (Anthropic/OpenAI/Google/Bedrock/Vertex)
 │   │   └── terminal.ts       # Terminal subprocess management + WebSocket I/O streaming
 │   └── /utils
-│       └── port.ts            # Available port discovery
+│       ├── logger.ts           # pino logger (file + stderr, rotation via pino-roll)
+│       └── port.ts             # Available port discovery
 
 /src-tauri                 # Tauri 2 (Rust) main process
 ├── Cargo.toml             # Rust dependencies
@@ -163,7 +165,7 @@ The frontend `useSSEStream` hook accumulates `text` events into `streamingText` 
 
 ### Database
 
-SQLite via `better-sqlite3` with WAL mode. Located at `~/.miniclaw/miniclaw.db`.
+SQLite via `bun:sqlite` with WAL mode. Located at `~/.miniclaw/miniclaw.db`.
 
 Tables: `chat_sessions`, `messages`, `settings`, `tasks`, `api_providers`.
 
@@ -180,6 +182,44 @@ Environment variable placeholders (`${KEY}`) are resolved against the DB `settin
 
 `platform.ts` searches for the `claude` binary in standard locations (`~/.local/bin`, `~/.claude/bin`, `~/.bun/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, etc.) and caches the result. If found, it's passed as `pathToClaudeCodeExecutable` to the SDK.
 
+### Logging System
+
+**pino** (structured JSON) + **pino-roll** (file rotation). All sidecar modules log to `~/.miniclaw/logs/`.
+
+| Item | Value |
+|------|-------|
+| Log directory | `~/.miniclaw/logs/` |
+| Active log | `~/.miniclaw/logs/current.log` (symlink → latest rotated file) |
+| Rotation | Size-based, 5MB per file, keep 3 old files |
+| Format | NDJSON (one JSON object per line) |
+| Levels | `debug` / `info` / `warn` / `error` |
+| Module field | `mod` (e.g. `"mod":"claude"`, `"mod":"chat"`, `"mod":"db"`) |
+| Dual output | File + stderr (stdout reserved for `READY:{port}` protocol) |
+
+**Quick log commands:**
+
+```bash
+# Tail live logs
+tail -f ~/.miniclaw/logs/current.log
+
+# Filter by module
+cat ~/.miniclaw/logs/current.log | jq 'select(.mod=="claude")'
+
+# Filter errors only
+cat ~/.miniclaw/logs/current.log | jq 'select(.level >= 50)'
+
+# Show human-readable summary
+cat ~/.miniclaw/logs/current.log | jq -r '[.time, .mod, .msg] | join(" | ")'
+```
+
+### Proxy Credential Auto-Refresh (`.env.local`)
+
+If `PROXY_CLI_COMMAND` is set in `.env.local`, the sidecar runs a wrapper trick on startup to capture `ANTHROPIC_*` env vars from the proxy CLI. Two `.env.local` locations (first match wins):
+1. Project root (dev mode)
+2. `~/.miniclaw/.env.local` (production)
+
+The `X-Working-Dir` custom header is **dynamically overridden** per chat request with the actual session `cwd` (not the stale `.env.local` value).
+
 ## Strict Code Rules (non-negotiable)
 
 - **Never add `@ts-nocheck` or `@ts-ignore`** — fix the root cause.
@@ -187,7 +227,7 @@ Environment variable placeholders (`${KEY}`) are resolved against the DB `settin
 - **Must** use `cn()` from `@/lib/utils` for conditional class names — never use template literal className.
 - **Must** add brief code comments for tricky or non-obvious logic.
 - **Shared types go in `shared/types.ts`** — never duplicate types between frontend and sidecar.
-- **Sidecar stdout is reserved for the `READY:{port}` protocol** — all logging must use `console.error` (stderr).
+- **Sidecar stdout is reserved for the `READY:{port}` protocol** — all logging uses pino (writes to file + stderr, never stdout).
 
 ## Code Style & Conventions
 
@@ -248,13 +288,29 @@ Environment variable placeholders (`${KEY}`) are resolved against the DB `settin
 
 ### Debugging Guidelines
 
-- **Sidecar not starting**: Check stderr output in terminal for `[sidecar:stderr]` lines. The Rust process logs these via `eprintln!`.
+- **Always read logs first**: `cat ~/.miniclaw/logs/current.log | jq .` — the sidecar instruments all key paths with pino structured logs.
+- **Sidecar not starting**: Check `~/.miniclaw/logs/current.log` for startup errors. Also check stderr in terminal for `[sidecar:stderr]` lines.
+- **Chat silent failure / no response**: Read logs for `mod=="chat"` and `mod=="claude"` — look for `Stream error caught`, `Session busy`, or missing `Stream completed normally`.
+- **Session stuck as "busy"**: The sidecar resets all stale `runtime_status='running'` sessions to `idle` on startup. Restart the sidecar to auto-fix. Or manually: `sqlite3 ~/.miniclaw/miniclaw.db "UPDATE chat_sessions SET runtime_status='idle'"`
 - **Port already in use**: Run `lsof -ti:1420 | xargs kill -9` to free the Vite port, or check for orphaned sidecar processes.
-- **Claude SDK errors**: Verify `claude` binary is installed and accessible. Check `findClaudeBinary()` in `platform.ts`.
+- **Claude SDK errors**: Logs show `claudePath`, `ANTHROPIC_BASE_URL`, and `ANTHROPIC_AUTH_TOKEN` (masked). Verify claude binary is accessible.
 - **Database issues**: Data lives in `~/.miniclaw/miniclaw.db`. Delete it to reset all state.
 - **Trace the call chain**: React hook → HTTP fetch → Hono route → service → database/SDK.
+- **Diagnose skill**: Use `$miniclaw-diagnose` skill (`.catpaw/skills/miniclaw-diagnose/SKILL.md`) for structured diagnostic workflows.
 
 ## Critical Known Pitfalls
+
+### Tilde (`~`) Path Expansion (Hard-Won Lesson)
+
+Node.js/Bun `child_process` does **NOT** expand `~` to the home directory — it's a shell feature. If `working_directory` is `"~"`, the SDK's `query()` will hang forever (subprocess spawn with invalid cwd).
+
+**Fix**: `claude-client.ts` resolves `~` → `os.homedir()` before passing to the SDK. Any new code that passes paths to `child_process`, `fs`, or SDK options **must** expand `~` first.
+
+### `ANTHROPIC_CUSTOM_HEADERS` X-Working-Dir (Hard-Won Lesson)
+
+The proxy CLI (`mc --code`) injects `X-Working-Dir` into `ANTHROPIC_CUSTOM_HEADERS` based on the **capture-time** working directory. If the sidecar refreshes credentials from `/tmp` (via the wrapper trick), the header points to `/tmp` and the proxy rejects requests with `400 Request is not allowed`.
+
+**Fix**: `claude-client.ts` dynamically overrides `X-Working-Dir` with the session's actual resolved `cwd` before each SDK call.
 
 ### Tauri 2 API: No `Builder::on_event()`
 
@@ -278,7 +334,11 @@ Tauri expects the sidecar binary at `src-tauri/binaries/sidecar-{target-triple}`
 
 ### Session Lock Prevents Concurrent Chat
 
-`acquireSessionLock()` uses an atomic SQL CAS (`UPDATE ... WHERE runtime_status = 'idle'`) to prevent concurrent requests. If the sidecar crashes mid-stream, the lock may not be released. The session will appear "busy" until `runtime_status` is manually reset to `idle` in the database.
+`acquireSessionLock()` uses an atomic SQL CAS (`UPDATE ... WHERE runtime_status = 'idle'`) to prevent concurrent requests.
+
+**Auto-recovery**: On sidecar startup, `initSchema()` resets all `runtime_status = 'running'` sessions back to `idle` (orphaned locks from previous crashes). The `transformedStream` catch block also ensures lock release on stream errors.
+
+**Manual recovery**: `sqlite3 ~/.miniclaw/miniclaw.db "UPDATE chat_sessions SET runtime_status='idle'"`
 
 ### Sidecar Process Cleanup
 

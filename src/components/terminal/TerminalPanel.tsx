@@ -1,6 +1,7 @@
 /**
- * TerminalPanel — Integrated terminal using xterm.js.
+ * TerminalPanel — Integrated terminal using xterm.js + node-pty.
  * Communicates with the sidecar via WebSocket for real-time I/O.
+ * Sends resize events so the PTY stays in sync with the UI.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -72,7 +73,7 @@ export function TerminalPanel() {
     xtermRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
-    // Handle container resize
+    // Handle container resize — fit xterm and notify PTY
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
     });
@@ -92,6 +93,8 @@ export function TerminalPanel() {
   // Connect WebSocket for real-time terminal I/O
   useEffect(() => {
     if (!sessionId || !baseUrl || !xtermRef.current) return;
+
+    const terminal = xtermRef.current;
 
     // Derive WebSocket URL from HTTP baseUrl
     const wsUrl = baseUrl.replace(/^http/, 'ws') + `/terminal/${sessionId}/ws`;
@@ -113,14 +116,22 @@ export function TerminalPanel() {
     };
 
     // Forward user keystrokes to sidecar via WebSocket
-    const disposable = xtermRef.current.onData((data) => {
+    const dataDisposable = terminal.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(data);
       }
     });
 
+    // Forward resize events to sidecar so the PTY dimensions stay in sync
+    const resizeDisposable = terminal.onResize(({ cols, rows }) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+      }
+    });
+
     return () => {
-      disposable.dispose();
+      dataDisposable.dispose();
+      resizeDisposable.dispose();
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
         ws.close();
       }

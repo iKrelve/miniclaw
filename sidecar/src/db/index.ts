@@ -11,6 +11,7 @@ import fs from 'fs';
 import os from 'os';
 import crypto from 'crypto';
 import { logger } from '../utils/logger';
+import { encrypt, decrypt } from '../utils/crypto';
 
 const DATA_DIR = process.env.MINICLAW_DATA_DIR || path.join(os.homedir(), '.miniclaw');
 const DB_PATH = path.join(DATA_DIR, 'miniclaw.db');
@@ -218,17 +219,30 @@ export function updateMessageContent(messageId: string, content: string) {
 // Settings
 // ==========================================
 
+/** Settings keys that contain sensitive credentials — encrypted at rest. */
+const SENSITIVE_SETTINGS = new Set([
+  'anthropic_auth_token',
+  'anthropic_api_key',
+  'openai_api_key',
+  'google_api_key',
+]);
+
 export function getSetting(key: string): string | undefined {
   const row = getDb()
     .prepare('SELECT value FROM settings WHERE key = ?')
     .get(key) as { value: string } | undefined;
-  return row?.value;
+  if (!row) return undefined;
+  // Decrypt sensitive settings transparently
+  if (SENSITIVE_SETTINGS.has(key)) return decrypt(row.value);
+  return row.value;
 }
 
 export function setSetting(key: string, value: string) {
+  // Encrypt sensitive settings before storing
+  const stored = SENSITIVE_SETTINGS.has(key) ? encrypt(value) : value;
   getDb()
     .prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
-    .run(key, value);
+    .run(key, stored);
 }
 
 export function getAllSettings(): Record<string, string> {
@@ -237,7 +251,8 @@ export function getAllSettings(): Record<string, string> {
     .all() as { key: string; value: string }[];
   const result: Record<string, string> = {};
   for (const row of rows) {
-    result[row.key] = row.value;
+    // Decrypt sensitive settings transparently
+    result[row.key] = SENSITIVE_SETTINGS.has(row.key) ? decrypt(row.value) : row.value;
   }
   return result;
 }
@@ -253,22 +268,35 @@ export function createProvider(opts: {
   base_url?: string;
 }) {
   const id = genId();
+  // Encrypt the API key before storing
+  const encryptedKey = encrypt(opts.api_key);
   getDb()
     .prepare('INSERT INTO api_providers (id, name, type, api_key, base_url) VALUES (?, ?, ?, ?, ?)')
-    .run(id, opts.name, opts.type, opts.api_key, opts.base_url || '');
+    .run(id, opts.name, opts.type, encryptedKey, opts.base_url || '');
   return getProvider(id)!;
 }
 
 export function getProvider(id: string) {
-  return getDb()
+  const row = getDb()
     .prepare('SELECT * FROM api_providers WHERE id = ?')
     .get(id) as Record<string, unknown> | undefined;
+  if (row && typeof row.api_key === 'string') {
+    row.api_key = decrypt(row.api_key);
+  }
+  return row;
 }
 
 export function listProviders() {
-  return getDb()
+  const rows = getDb()
     .prepare('SELECT * FROM api_providers ORDER BY created_at DESC')
     .all() as Record<string, unknown>[];
+  // Decrypt API keys for all returned providers
+  for (const row of rows) {
+    if (typeof row.api_key === 'string') {
+      row.api_key = decrypt(row.api_key);
+    }
+  }
+  return rows;
 }
 
 export function updateProvider(id: string, updates: Record<string, unknown>) {
@@ -277,7 +305,12 @@ export function updateProvider(id: string, updates: Record<string, unknown>) {
   for (const [key, value] of Object.entries(updates)) {
     if (['name', 'api_key', 'base_url', 'is_active'].includes(key)) {
       fields.push(`${key} = ?`);
-      values.push(value);
+      // Encrypt api_key before storing
+      if (key === 'api_key' && typeof value === 'string') {
+        values.push(encrypt(value));
+      } else {
+        values.push(value);
+      }
     }
   }
   if (fields.length === 0) return;

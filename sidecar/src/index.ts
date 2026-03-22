@@ -137,7 +137,7 @@ import taskRoutes from './routes/tasks';
 import workspaceRoutes from './routes/workspace';
 import terminalRoutes from './routes/terminal';
 import uploadRoutes from './routes/uploads';
-import { attachSocket, detachSocket, writeToTerminal, getTerminalSession } from './services/terminal';
+import { attachSocket, detachSocket, writeToTerminal, resizeTerminal, getTerminalSession } from './services/terminal';
 
 const app = new Hono();
 
@@ -197,9 +197,19 @@ async function main() {
         attachSocket(terminalId, ws);
       },
       message(ws, message) {
-        // Forward user input to the terminal process
         const { terminalId } = ws.data as { terminalId: string };
         const data = typeof message === 'string' ? message : new TextDecoder().decode(message);
+        // Handle resize messages: JSON with { type: "resize", cols, rows }
+        if (data.startsWith('{"type":"resize"')) {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'resize' && parsed.cols && parsed.rows) {
+              resizeTerminal(terminalId, parsed.cols, parsed.rows);
+              return;
+            }
+          } catch { /* not JSON, treat as regular input */ }
+        }
+        // Forward user input to the PTY process
         writeToTerminal(terminalId, data);
       },
       close(ws) {
