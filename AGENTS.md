@@ -174,24 +174,27 @@ bun run dev                # Start full dev mode
 
 The Tauri Rust shell spawns the sidecar and parses stdout for `READY:{port}`. The sidecar **must** print this line to stdout before any other stdout output. All diagnostic logs go to stderr and file (`Bun.file().writer()`).
 
-### SSE Chat Streaming
+### SSE Chat Streaming (Event Bus Architecture)
 
-`POST /chat` returns an SSE stream (`text/event-stream`). Events are JSON-encoded:
+Chat uses a two-step fire-and-forget + SSE subscription model:
+
+1. **`POST /chat`** — fire-and-forget: starts the Claude SDK conversation in the sidecar background, returns `{ ok, session_id }` immediately.
+2. **`GET /chat/events/:sessionId`** — SSE endpoint: subscribes to the session's event stream from the sidecar-side `EventBuffer`. Supports `?after=N` query parameter for reconnect replay.
+
+The sidecar's `EventBuffer` (`sidecar/src/services/event-buffer.ts`) accumulates all events in memory with monotonic indices. If the WebView SSE connection drops (e.g. macOS App Nap), the frontend reconnects with `?after=lastIndex` and replays missed events. The Claude SDK conversation is never interrupted — it runs entirely in the sidecar (Bun) process.
+
+Events are JSON-encoded with an `index` field for cursor tracking:
 
 ```
-data: {"type":"text","data":"Hello"}
-data: {"type":"tool_use","data":"{...}"}
-data: {"type":"tool_result","data":"{...}"}
-data: {"type":"tool_output","data":"..."}
-data: {"type":"permission_request","data":"{...}"}
-data: {"type":"status","data":"{...}"}
-data: {"type":"result","data":"{...}"}
-data: {"type":"token_usage","data":"{...}"}
-data: {"type":"keep_alive","data":""}
-data: {"type":"done","data":""}
+data: {"type":"text","data":"Hello","index":0}
+data: {"type":"tool_use","data":"{...}","index":1}
+data: {"type":"tool_result","data":"{...}","index":2}
+data: {"type":"status","data":"{...}","index":3}
+data: {"type":"result","data":"{...}","index":4}
+data: {"type":"done","data":"","index":5}
 ```
 
-The `StreamSessionManager` singleton (`src/lib/streamSessionManager.ts`) manages SSE streams independently of component lifecycle — when a user switches sessions, the old ChatView unmounts but the stream continues. Components subscribe to get the current snapshot.
+The frontend `useSSEStream` hook (`src/hooks/useSSEStream.ts`) handles auto-reconnect with exponential backoff (1s, 2s, 4s..., max 10 retries). Heartbeat comments (`: heartbeat`) are sent every 5 seconds to keep the connection alive.
 
 ### Database
 
