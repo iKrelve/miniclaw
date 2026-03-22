@@ -385,20 +385,20 @@ export async function executeBrowserAction(cmd: BrowserActionCommand): Promise<C
     const result = await bridge.exec(cmd.action, ...(cmd.args || []))
 
     // Post-process screenshots: resize to fit Anthropic Vision API limits,
-    // then replace the file path with a short summary. If we leave { path: "..." }
-    // in the output, the SDK's Read tool tries to read the binary JPEG file,
-    // which floods the context and causes "Input is too long" errors.
+    // then convert the JSON result to plain text matching agent-browser's
+    // native (non --json) output: "Screenshot saved to /path/file.jpg"
+    //
+    // When Claude Code uses agent-browser directly (no --json), its Bash tool
+    // sees this text, then uses the Read tool which internally handles images
+    // via the SDK's built-in image pipeline (resize + vision content blocks).
+    // Our sidecar uses --json internally for structured parsing, but the final
+    // HTTP response to miniclaw-desk CLI must mimic the native text output.
     if (cmd.action === 'screenshot' && result.success && result.data) {
       const data = result.data as Record<string, unknown>
       if (typeof data.path === 'string') {
         const resized = await resizeScreenshotIfNeeded(data.path)
-        try {
-          const stat = statSync(resized)
-          // Replace structured data with a text summary so SDK doesn't try to Read the file
-          result.data = `Screenshot saved: ${resized} (${Math.round(stat.size / 1024)}KB)`
-        } catch {
-          result.data = `Screenshot saved: ${resized}`
-        }
+        // Mimic agent-browser's native text output format
+        result.data = `Screenshot saved to ${resized}`
       }
     }
 
