@@ -19,6 +19,8 @@ import mcpRoutes from './routes/mcp';
 import skillsRoutes from './routes/skills';
 import taskRoutes from './routes/tasks';
 import workspaceRoutes from './routes/workspace';
+import terminalRoutes from './routes/terminal';
+import uploadRoutes from './routes/uploads';
 
 const app = new Hono();
 
@@ -42,6 +44,7 @@ app.route('/skills', skillsRoutes);
 app.route('/tasks', taskRoutes);
 app.route('/workspace', workspaceRoutes);
 app.route('/terminal', terminalRoutes);
+app.route('/uploads', uploadRoutes);
 
 async function main() {
   const port = await getAvailablePort();

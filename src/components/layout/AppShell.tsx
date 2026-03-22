@@ -1,9 +1,10 @@
 /**
- * AppShell — Main application layout with sidebar and content area.
+ * AppShell — Main application layout with sidebar, update banner, and content area.
  */
 
 import { useState } from 'react';
 import { Sidebar } from './Sidebar';
+import { UpdateBanner } from './UpdateBanner';
 import { ChatView } from '../chat/ChatView';
 import { SettingsView } from '../settings/SettingsView';
 import { TerminalPanel } from '../terminal/TerminalPanel';
@@ -32,6 +33,7 @@ export function AppShell() {
     <div className="flex h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
       <Sidebar onNavigate={setCurrentView} currentView={currentView} />
       <div className="flex-1 flex flex-col min-h-0">
+        <UpdateBanner />
         {renderContent()}
       </div>
     </div>

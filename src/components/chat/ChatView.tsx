@@ -1,10 +1,14 @@
 /**
- * ChatView — Main chat interface combining message list, input, and model selector.
+ * ChatView — Main chat interface with Markdown rendering, tool calls,
+ * permissions, model selector, context usage, and file drop.
  */
 
 import { useEffect, useCallback } from 'react';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
+import { ModelSelector } from './ModelSelector';
+import { ContextUsageIndicator } from './ContextUsageIndicator';
+import { FileDropZone } from './FileDropZone';
 import { useSSEStream } from '../../hooks/useSSEStream';
 import { useAppStore } from '../../stores';
 import { useSidecar } from '../../hooks/useSidecar';
@@ -30,14 +34,7 @@ export function ChatView() {
   const handleSend = useCallback(
     (content: string) => {
       if (!baseUrl || !activeSessionId) return;
-
-      addMessage({
-        id: `temp-${Date.now()}`,
-        role: 'user',
-        content,
-        created_at: new Date().toISOString(),
-      });
-
+      addMessage({ id: `temp-${Date.now()}`, role: 'user', content, created_at: new Date().toISOString() });
       send(baseUrl, activeSessionId, content, {
         model: activeSession?.model,
         mode: activeSession?.mode,
@@ -51,40 +48,54 @@ export function ChatView() {
     interrupt(baseUrl, activeSessionId);
   }, [baseUrl, activeSessionId, interrupt]);
 
-  // Permission handlers
-  const handlePermissionAllow = useCallback(
-    (permissionId: string) => {
-      if (!baseUrl) return;
-      fetch(`${baseUrl}/chat/permission`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ permission_id: permissionId, allow: true }),
-      }).catch(() => toast('权限响应发送失败'));
+  const handlePermissionAllow = useCallback((permissionId: string) => {
+    if (!baseUrl) return;
+    fetch(`${baseUrl}/chat/permission`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permission_id: permissionId, allow: true }),
+    }).catch(() => toast('权限响应发送失败'));
+  }, [baseUrl]);
+
+  const handlePermissionDeny = useCallback((permissionId: string) => {
+    if (!baseUrl) return;
+    fetch(`${baseUrl}/chat/permission`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permission_id: permissionId, allow: false }),
+    }).catch(() => toast('权限响应发送失败'));
+  }, [baseUrl]);
+
+  const handleFilesDropped = useCallback(
+    async (files: File[]) => {
+      if (!baseUrl || !activeSessionId) return;
+      // Upload files and mention in message
+      const names: string[] = [];
+      for (const file of files) {
+        try {
+          const data = await fileToBase64(file);
+          const res = await fetch(`${baseUrl}/uploads`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: file.name, data, type: file.type }),
+          });
+          const result = await res.json();
+          names.push(result.name || file.name);
+        } catch {
+          toast(`上传失败: ${file.name}`);
+        }
+      }
+      if (names.length > 0) {
+        toast(`已上传 ${names.length} 个文件`);
+      }
     },
-    [baseUrl],
+    [baseUrl, activeSessionId],
   );
 
-  const handlePermissionDeny = useCallback(
-    (permissionId: string) => {
-      if (!baseUrl) return;
-      fetch(`${baseUrl}/chat/permission`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ permission_id: permissionId, allow: false }),
-      }).catch(() => toast('权限响应发送失败'));
-    },
-    [baseUrl],
-  );
-
-  // When stream completes, add assistant message to local state
+  // When stream completes, add assistant message
   useEffect(() => {
     if (!isStreaming && streamingText) {
-      addMessage({
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: streamingText,
-        created_at: new Date().toISOString(),
-      });
+      addMessage({ id: `assistant-${Date.now()}`, role: 'assistant', content: streamingText, created_at: new Date().toISOString() });
       clear();
     }
   }, [isStreaming, streamingText, addMessage, clear]);
@@ -103,17 +114,13 @@ export function ChatView() {
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      {/* Session header */}
+    <FileDropZone onFilesDropped={handleFilesDropped} disabled={!ready}>
+      {/* Session header with model selector */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-200 dark:border-zinc-800">
         <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
           {activeSession?.title || 'New Chat'}
         </div>
-        {activeSession?.model && (
-          <span className="text-xs text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full">
-            {activeSession.model}
-          </span>
-        )}
+        <ModelSelector />
       </div>
 
       <MessageList
@@ -124,6 +131,10 @@ export function ChatView() {
         onPermissionAllow={handlePermissionAllow}
         onPermissionDeny={handlePermissionDeny}
       />
+
+      {/* Context usage indicator */}
+      <ContextUsageIndicator streamEvents={streamEvents} />
+
       <MessageInput
         onSend={handleSend}
         onInterrupt={handleInterrupt}
@@ -131,6 +142,21 @@ export function ChatView() {
         disabled={!ready}
       />
       <Toaster position="bottom-right" />
-    </div>
+    </FileDropZone>
   );
+}
+
+/** Convert a File to base64 string */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Remove data:xxx;base64, prefix
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }

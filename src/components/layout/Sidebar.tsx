@@ -7,6 +7,7 @@ import { Plus, MessageSquare, Settings, FolderGit2, Puzzle, Sparkles, Terminal, 
 import { cn } from '../../lib/utils';
 import { useAppStore } from '../../stores';
 import { useSidecar } from '../../hooks/useSidecar';
+import { ConnectionStatus } from './ConnectionStatus';
 
 interface SidebarProps {
   onNavigate: (view: string) => void;
@@ -155,6 +156,9 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
           <p className="text-xs text-zinc-400 px-3 py-2">{search ? '未找到匹配' : '暂无会话'}</p>
         )}
       </div>
+
+      {/* Connection status footer */}
+      <ConnectionStatus />
 
       {/* Context menu */}
       {contextMenu && (
