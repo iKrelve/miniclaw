@@ -46,4 +46,38 @@ uploadRoutes.post('/', async (c) => {
   )
 })
 
+/** GET /uploads/serve?path=... — Serve a file from uploads directory (for image preview) */
+uploadRoutes.get('/serve', (c) => {
+  const filePath = c.req.query('path')
+  if (!filePath) return c.json({ error: 'path is required' }, 400)
+
+  // Security: only serve files from the uploads directory
+  const resolved = path.resolve(filePath)
+  if (!resolved.startsWith(UPLOAD_DIR)) {
+    return c.json({ error: 'Access denied' }, 403)
+  }
+
+  if (!fs.existsSync(resolved)) return c.json({ error: 'File not found' }, 404)
+
+  const buffer = fs.readFileSync(resolved)
+  const ext = path.extname(resolved).toLowerCase()
+  const mimeMap: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.pdf': 'application/pdf',
+  }
+  const contentType = mimeMap[ext] || 'application/octet-stream'
+
+  return new Response(buffer, {
+    headers: {
+      'Content-Type': contentType,
+      'Cache-Control': 'max-age=86400',
+    },
+  })
+})
+
 export default uploadRoutes

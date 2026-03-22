@@ -384,13 +384,21 @@ export async function executeBrowserAction(cmd: BrowserActionCommand): Promise<C
     await bridge.connect(port)
     const result = await bridge.exec(cmd.action, ...(cmd.args || []))
 
-    // Post-process: resize screenshots so they fit Anthropic Vision API limits.
-    // agent-browser returns { path: "/path/to/screenshot.png" } — we resize the
-    // file in-place (to JPEG ≤1568px) before the SDK tries to read it.
+    // Post-process screenshots: resize to fit Anthropic Vision API limits,
+    // then replace the file path with a short summary. If we leave { path: "..." }
+    // in the output, the SDK's Read tool tries to read the binary JPEG file,
+    // which floods the context and causes "Input is too long" errors.
     if (cmd.action === 'screenshot' && result.success && result.data) {
       const data = result.data as Record<string, unknown>
       if (typeof data.path === 'string') {
-        data.path = await resizeScreenshotIfNeeded(data.path)
+        const resized = await resizeScreenshotIfNeeded(data.path)
+        try {
+          const stat = statSync(resized)
+          // Replace structured data with a text summary so SDK doesn't try to Read the file
+          result.data = `Screenshot saved: ${resized} (${Math.round(stat.size / 1024)}KB)`
+        } catch {
+          result.data = `Screenshot saved: ${resized}`
+        }
       }
     }
 

@@ -124,6 +124,8 @@ interface FileAttachment {
   name: string
   type?: string
   size?: number
+  data?: string
+  filePath?: string
 }
 
 function parseMessageFiles(content: string): { text: string; files: FileAttachment[] } {

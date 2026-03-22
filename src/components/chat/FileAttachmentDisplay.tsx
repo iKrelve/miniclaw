@@ -7,6 +7,7 @@ import { useState, useCallback } from 'react'
 import { ArrowLeft, ArrowRight, X } from 'lucide-react'
 import { File as FileIcon } from '@phosphor-icons/react'
 import { Button } from '../ui/button'
+import { useAppStore } from '../../stores'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -32,6 +33,11 @@ function formatFileSize(bytes: number): string {
 
 function fileUrl(f: FileAttachment): string {
   if (f.data) return `data:${f.type || 'application/octet-stream'};base64,${f.data}`
+  // History messages: load image from disk via sidecar serve API
+  if (f.filePath && isImageFile(f.type)) {
+    const port = useAppStore.getState().sidecarPort
+    if (port) return `http://127.0.0.1:${port}/uploads/serve?path=${encodeURIComponent(f.filePath)}`
+  }
   return ''
 }
 
