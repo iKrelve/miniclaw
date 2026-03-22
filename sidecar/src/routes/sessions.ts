@@ -9,10 +9,12 @@ import {
   listSessions,
   updateSessionTitle,
   updateSessionModel,
+  updateSessionPermissionProfile,
   deleteSession,
   archiveSession,
   getMessages,
 } from '../db'
+import { resolvePermission } from '../services/claude-client'
 
 const sessionRoutes = new Hono()
 
@@ -70,6 +72,12 @@ sessionRoutes.put('/:id', async (c) => {
   }
   if (body.status === 'archived') {
     archiveSession(id)
+  }
+  if (body.permission_profile !== undefined) {
+    if (body.permission_profile !== 'default' && body.permission_profile !== 'full_access') {
+      return c.json({ error: 'permission_profile must be "default" or "full_access"' }, 400)
+    }
+    updateSessionPermissionProfile(id, body.permission_profile)
   }
 
   const updated = getSession(id)

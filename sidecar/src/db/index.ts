@@ -187,6 +187,14 @@ export function setSessionRuntimeStatus(id: string, status: string) {
     .run(status, id)
 }
 
+export function updateSessionPermissionProfile(id: string, profile: string) {
+  getDb()
+    .prepare(
+      "UPDATE chat_sessions SET permission_profile = ?, updated_at = datetime('now') WHERE id = ?",
+    )
+    .run(profile, id)
+}
+
 export function deleteSession(id: string) {
   getDb().prepare('DELETE FROM chat_sessions WHERE id = ?').run(id)
 }

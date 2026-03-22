@@ -44,6 +44,7 @@ interface ToolActionsGroupProps {
 type ToolCategory = 'read' | 'write' | 'bash' | 'search' | 'other'
 
 function getToolCategory(name: string): ToolCategory {
+  if (!name) return 'other'
   const lower = name.toLowerCase()
   if (lower === 'read' || lower === 'readfile' || lower === 'read_file') return 'read'
   if (
@@ -104,7 +105,7 @@ function extractFilename(path: string): string {
 
 function getToolSummary(name: string, input: unknown, category: ToolCategory): string {
   const inp = input as Record<string, unknown> | undefined
-  if (!inp) return name
+  if (!inp) return name || 'unknown'
 
   switch (category) {
     case 'read':

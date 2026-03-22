@@ -140,40 +140,84 @@ export function useSSEStream(): UseSSEStreamResult {
             try {
               const event = JSON.parse(line.slice(6)) as StreamMessage
 
+              // All event.data from sidecar are JSON strings — parse each.
+              // Pattern copied from CodePilot's handleSSEEvent.
               switch (event.type) {
-                case 'text':
-                  if (typeof event.data === 'string') {
-                    text += event.data
-                    setStreamingText(text)
-                  }
+                case 'text': {
+                  text += event.data
+                  setStreamingText(text)
                   break
+                }
 
                 case 'tool_use': {
-                  const tu = event.data as ToolUseInfo
-                  setToolUses((prev) => [...prev, tu])
+                  try {
+                    const d = JSON.parse(event.data as string)
+                    setToolUses((prev) => [...prev, { id: d.id, name: d.name, input: d.input }])
+                  } catch {
+                    // skip malformed tool_use
+                  }
                   break
                 }
 
                 case 'tool_result': {
-                  const tr = event.data as ToolResultInfo
-                  setToolResults((prev) => [...prev, tr])
+                  try {
+                    const d = JSON.parse(event.data as string)
+                    setToolResults((prev) => [
+                      ...prev,
+                      { tool_use_id: d.tool_use_id, content: d.content, is_error: d.is_error },
+                    ])
+                  } catch {
+                    // skip malformed tool_result
+                  }
                   break
                 }
 
-                case 'status':
-                  if (typeof event.data === 'string') {
-                    setStatusText(event.data)
+                case 'tool_output': {
+                  // May be JSON (_progress) or raw stderr text
+                  try {
+                    const parsed = JSON.parse(event.data as string)
+                    if (parsed._progress) {
+                      // Tool progress — update status text
+                      const elapsed = Math.round(parsed.elapsed_time_seconds ?? 0)
+                      setStatusText(`Running ${parsed.tool_name || 'tool'}... (${elapsed}s)`)
+                      break
+                    }
+                  } catch {
+                    // Not JSON — raw stderr output, fall through
                   }
+                  setStreamingToolOutput((prev) => prev + (event.data as string))
                   break
+                }
 
-                case 'tool_output':
-                  if (typeof event.data === 'string') {
-                    setStreamingToolOutput((prev) => prev + event.data)
+                case 'status': {
+                  try {
+                    const d = JSON.parse(event.data as string)
+                    if (d.session_id) {
+                      setStatusText(`Connected (${d.model || 'claude'})`)
+                    } else {
+                      setStatusText(event.data as string)
+                    }
+                  } catch {
+                    setStatusText((event.data as string) || '')
                   }
                   break
+                }
+
+                case 'result': {
+                  // Token usage — forward to messages for ContextUsageIndicator
+                  setMessages((prev) => [...prev, event])
+                  setStatusText('')
+                  break
+                }
+
+                case 'error': {
+                  text += '\n\n**Error:** ' + (event.data as string)
+                  setStreamingText(text)
+                  setMessages((prev) => [...prev, event])
+                  break
+                }
 
                 case 'done':
-                  // Stream complete — handled by finally block
                   break
 
                 default:
