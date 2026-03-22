@@ -8,6 +8,7 @@ import {
   getSession,
   listSessions,
   updateSessionTitle,
+  updateSessionModel,
   deleteSession,
   archiveSession,
   getMessages,
@@ -63,6 +64,9 @@ sessionRoutes.put('/:id', async (c) => {
 
   if (body.title) {
     updateSessionTitle(id, body.title)
+  }
+  if (body.model) {
+    updateSessionModel(id, body.model)
   }
   if (body.status === 'archived') {
     archiveSession(id)

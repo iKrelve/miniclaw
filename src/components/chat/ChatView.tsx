@@ -1,12 +1,14 @@
 /**
- * ChatView — Main chat interface with Markdown rendering, tool calls,
- * permissions, model selector, context usage, and file drop.
+ * ChatView — Main chat interface with model selection, working directory,
+ * tool calls, permissions, and file drop.
+ *
+ * Model selector lives inside MessageInput (aligned with CodePilot).
+ * Model + provider_id are passed when creating sessions and sending messages.
  */
 
-import { useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { MessageList } from './MessageList'
 import { MessageInput } from './MessageInput'
-import { ModelSelector } from './ModelSelector'
 import { ContextUsageIndicator } from './ContextUsageIndicator'
 import { FileDropZone } from './FileDropZone'
 import { useSSEStream } from '../../hooks/useSSEStream'
@@ -14,6 +16,9 @@ import { useAppStore } from '../../stores'
 import { useSidecar } from '../../hooks/useSidecar'
 import { useDirectoryPicker } from '../../hooks/useDirectoryPicker'
 import { Toaster, toast } from '../ui/toast'
+
+const MODEL_STORAGE_KEY = 'miniclaw:last-model'
+const PROVIDER_STORAGE_KEY = 'miniclaw:last-provider-id'
 
 export function ChatView() {
   const { baseUrl, ready } = useSidecar()
@@ -38,9 +43,38 @@ export function ChatView() {
 
   const activeSession = sessions.find((s) => s.id === activeSessionId)
 
-  // When handleSendNew creates a session and immediately starts streaming,
-  // the activeSessionId change triggers this effect. Skip clear() in that
-  // case so we don't wipe the in-flight SSE stream data.
+  // Model + Provider state — persisted in localStorage
+  const [currentModel, setCurrentModel] = useState(
+    () => activeSession?.model || localStorage.getItem(MODEL_STORAGE_KEY) || 'sonnet',
+  )
+  const [currentProviderId, setCurrentProviderId] = useState(
+    () => activeSession?.provider_id || localStorage.getItem(PROVIDER_STORAGE_KEY) || '',
+  )
+
+  // Sync model/provider from active session when switching sessions
+  useEffect(() => {
+    if (activeSession?.model) setCurrentModel(activeSession.model)
+    if (activeSession?.provider_id) setCurrentProviderId(activeSession.provider_id)
+  }, [activeSession?.model, activeSession?.provider_id])
+
+  const handleModelChange = useCallback(
+    (modelId: string) => {
+      setCurrentModel(modelId)
+      localStorage.setItem(MODEL_STORAGE_KEY, modelId)
+
+      // Update the active session's model on the backend
+      if (baseUrl && activeSessionId) {
+        fetch(`${baseUrl}/sessions/${activeSessionId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: modelId }),
+        }).catch(() => {})
+      }
+    },
+    [baseUrl, activeSessionId],
+  )
+
+  // Skip clear on session switch when we just created + started streaming
   const skipNextClearRef = useRef(false)
 
   // Load messages when session changes
@@ -68,11 +102,12 @@ export function ChatView() {
         created_at: new Date().toISOString(),
       })
       send(baseUrl, activeSessionId, content, {
-        model: activeSession?.model,
+        model: currentModel,
         mode: activeSession?.mode,
+        providerId: currentProviderId,
       })
     },
-    [baseUrl, activeSessionId, activeSession, send, addMessage],
+    [baseUrl, activeSessionId, activeSession, send, addMessage, currentModel, currentProviderId],
   )
 
   // Auto-create session then send — used when no session is active
@@ -94,14 +129,17 @@ export function ChatView() {
         const res = await fetch(`${baseUrl}/sessions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: content.slice(0, 50), working_directory: dir }),
+          body: JSON.stringify({
+            title: content.slice(0, 50),
+            working_directory: dir,
+            model: currentModel,
+            provider_id: currentProviderId,
+          }),
         })
         const data = await res.json()
         if (!data.session) return
         const session = data.session
         addSession(session)
-        // Mark so the useEffect triggered by setActiveSession won't clear()
-        // the SSE stream that send() is about to start.
         skipNextClearRef.current = true
         setActiveSession(session.id)
         addMessage({
@@ -111,12 +149,26 @@ export function ChatView() {
           content,
           created_at: new Date().toISOString(),
         })
-        send(baseUrl, session.id, content, { model: session.model, mode: session.mode })
+        send(baseUrl, session.id, content, {
+          model: currentModel,
+          mode: session.mode,
+          providerId: currentProviderId,
+        })
       } catch (err) {
         toast(err instanceof Error ? err.message : '创建会话失败')
       }
     },
-    [baseUrl, addSession, setActiveSession, addMessage, send, getEffectiveDir, pickDirectory],
+    [
+      baseUrl,
+      addSession,
+      setActiveSession,
+      addMessage,
+      send,
+      getEffectiveDir,
+      pickDirectory,
+      currentModel,
+      currentProviderId,
+    ],
   )
 
   const handleInterrupt = useCallback(() => {
@@ -151,7 +203,6 @@ export function ChatView() {
   const handleFilesDropped = useCallback(
     async (files: File[]) => {
       if (!baseUrl || !activeSessionId) return
-      // Upload files and mention in message
       const names: string[] = []
       for (const file of files) {
         try {
@@ -195,6 +246,7 @@ export function ChatView() {
     return '.../' + parts.slice(-2).join('/')
   }
 
+  // Welcome / empty state — no active session
   if (!activeSessionId) {
     const cachedDir = getEffectiveDir()
     return (
@@ -217,8 +269,14 @@ export function ChatView() {
             </button>
           </div>
         </div>
-        {/* Input always visible */}
-        <MessageInput onSend={handleSendNew} isStreaming={false} disabled={!ready} />
+        {/* Input with model selector */}
+        <MessageInput
+          onSend={handleSendNew}
+          isStreaming={false}
+          disabled={!ready}
+          currentModel={currentModel}
+          onModelChange={handleModelChange}
+        />
         <Toaster position="bottom-right" />
       </div>
     )
@@ -226,22 +284,19 @@ export function ChatView() {
 
   return (
     <FileDropZone onFilesDropped={handleFilesDropped} disabled={!ready}>
-      {/* Session header with model selector + working dir */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-200 dark:border-zinc-800">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
-            {activeSession?.title || 'New Chat'}
-          </div>
-          {activeSession?.working_directory && (
-            <span
-              className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 truncate max-w-[200px]"
-              title={activeSession.working_directory}
-            >
-              📁 {formatDir(activeSession.working_directory)}
-            </span>
-          )}
+      {/* Session header — title + working dir only (model selector is in input) */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-200 dark:border-zinc-800 min-w-0">
+        <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
+          {activeSession?.title || 'New Chat'}
         </div>
-        <ModelSelector />
+        {activeSession?.working_directory && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 truncate max-w-[200px]"
+            title={activeSession.working_directory}
+          >
+            📁 {formatDir(activeSession.working_directory)}
+          </span>
+        )}
       </div>
 
       <MessageList
@@ -261,6 +316,8 @@ export function ChatView() {
         onInterrupt={handleInterrupt}
         isStreaming={isStreaming}
         disabled={!ready}
+        currentModel={currentModel}
+        onModelChange={handleModelChange}
       />
       <Toaster position="bottom-right" />
     </FileDropZone>
@@ -273,7 +330,6 @@ function fileToBase64(file: File): Promise<string> {
     const reader = new FileReader()
     reader.onload = () => {
       const result = reader.result as string
-      // Remove data:xxx;base64, prefix
       const base64 = result.includes(',') ? result.split(',')[1] : result
       resolve(base64)
     }
