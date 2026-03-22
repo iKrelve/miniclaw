@@ -3,12 +3,20 @@
  * Adapted from CodePilot's ai-elements/terminal.tsx.
  */
 
-import type { HTMLAttributes } from 'react'
+import {
+  type HTMLAttributes,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import Ansi from 'ansi-to-react'
 import { Check, Copy, Terminal as TerminalIcon, Trash } from '@phosphor-icons/react'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Shimmer } from './shimmer'
 
 interface TerminalContextType {

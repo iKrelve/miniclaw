@@ -79,19 +79,21 @@ export function installCli(): void {
 }
 
 function findCliSource(): string | null {
-  // Dev mode: resources/bin/miniclaw-desk relative to project root
-  const candidates = [
-    // Relative to sidecar/src/services/ → project root
+  const candidates: string[] = []
+
+  // Production: Tauri passes the resource directory via env var
+  const resDir = process.env.MINICLAW_RESOURCE_DIR
+  if (resDir) {
+    candidates.push(path.join(resDir, 'resources', 'bin', 'miniclaw-desk'))
+    candidates.push(path.join(resDir, 'bin', 'miniclaw-desk'))
+  }
+
+  // Dev mode fallbacks: relative to project root
+  candidates.push(
     path.resolve(__dirname, '../../../resources/bin/miniclaw-desk'),
-    // Relative to sidecar/ → project root
     path.resolve(process.cwd(), 'resources/bin/miniclaw-desk'),
     path.resolve(process.cwd(), '../resources/bin/miniclaw-desk'),
-    // import.meta.url based
-    path.resolve(
-      path.dirname(new URL(import.meta.url).pathname),
-      '../../../resources/bin/miniclaw-desk',
-    ),
-  ]
+  )
 
   for (const p of candidates) {
     if (fs.existsSync(p)) return p
@@ -195,12 +197,21 @@ export function installBuiltinSkills(): void {
 }
 
 function findSkillsSource(): string | null {
-  const candidates = [
+  const candidates: string[] = []
+
+  // Production: Tauri passes the resource directory via env var
+  const resDir = process.env.MINICLAW_RESOURCE_DIR
+  if (resDir) {
+    candidates.push(path.join(resDir, 'resources', 'skills'))
+    candidates.push(path.join(resDir, 'skills'))
+  }
+
+  // Dev mode fallbacks: relative to project root
+  candidates.push(
     path.resolve(__dirname, '../../../resources/skills'),
     path.resolve(process.cwd(), 'resources/skills'),
     path.resolve(process.cwd(), '../resources/skills'),
-    path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../resources/skills'),
-  ]
+  )
 
   for (const p of candidates) {
     if (fs.existsSync(p)) return p

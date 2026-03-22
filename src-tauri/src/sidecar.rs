@@ -37,10 +37,19 @@ impl SidecarState {
 /// Start the Bun sidecar process.
 /// Parses stdout for the "READY:{port}" line to learn the server port.
 pub async fn start_sidecar(app: &AppHandle) -> Result<(), String> {
+    // Resolve the Tauri resource directory so the sidecar can find
+    // bundled CLI scripts and skill files at runtime.
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
     let sidecar_command = app
         .shell()
         .sidecar("sidecar")
-        .map_err(|e| format!("Failed to create sidecar command: {}", e))?;
+        .map_err(|e| format!("Failed to create sidecar command: {}", e))?
+        .env("MINICLAW_RESOURCE_DIR", &resource_dir);
 
     let (mut rx, child) = sidecar_command
         .spawn()

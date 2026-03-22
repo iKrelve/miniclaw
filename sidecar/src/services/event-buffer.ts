@@ -18,11 +18,16 @@ export interface IndexedEvent {
 
 type Listener = (event: IndexedEvent) => void
 
+/** Auto-GC delay after stream completes (5 minutes) */
+const GC_DELAY_MS = 5 * 60 * 1000
+
 interface SessionBuffer {
   events: IndexedEvent[]
   listeners: Set<Listener>
   /** Whether the stream has finished (received a 'done' event) */
   done: boolean
+  /** Timer handle for delayed GC after completion */
+  gcTimer: ReturnType<typeof setTimeout> | null
 }
 
 class EventBuffer {
@@ -34,7 +39,10 @@ class EventBuffer {
     const event: IndexedEvent = { index: buf.events.length, type, data }
     buf.events.push(event)
 
-    if (type === 'done') buf.done = true
+    if (type === 'done') {
+      buf.done = true
+      this.scheduleGC(sessionId, buf)
+    }
 
     for (const listener of buf.listeners) {
       try {
@@ -83,10 +91,32 @@ class EventBuffer {
     return this.buffers.has(sessionId)
   }
 
-  /** Clear a session's buffer (call after the client has consumed all events) */
+  /**
+   * Reset a session's events without removing subscribers.
+   * Used when a new conversation starts on the same session — existing SSE
+   * subscribers stay connected and will receive the new events.
+   */
+  reset(sessionId: string): void {
+    const buf = this.buffers.get(sessionId)
+    if (buf) {
+      if (buf.gcTimer) clearTimeout(buf.gcTimer)
+      const oldCount = buf.events.length
+      buf.events = []
+      buf.done = false
+      buf.gcTimer = null
+      logger.debug('event-buffer', 'Reset buffer (listeners preserved)', {
+        sessionId,
+        oldEventCount: oldCount,
+        listenerCount: buf.listeners.size,
+      })
+    }
+  }
+
+  /** Clear a session's buffer entirely (events + listeners) */
   clear(sessionId: string): void {
     const buf = this.buffers.get(sessionId)
     if (buf) {
+      if (buf.gcTimer) clearTimeout(buf.gcTimer)
       buf.listeners.clear()
       this.buffers.delete(sessionId)
       logger.debug('event-buffer', 'Cleared buffer', {
@@ -96,10 +126,27 @@ class EventBuffer {
     }
   }
 
+  /** Schedule automatic cleanup of a completed buffer after GC_DELAY_MS */
+  private scheduleGC(sessionId: string, buf: SessionBuffer): void {
+    if (buf.gcTimer) clearTimeout(buf.gcTimer)
+    buf.gcTimer = setTimeout(() => {
+      // Only GC if still the same buffer and still done (not restarted)
+      const current = this.buffers.get(sessionId)
+      if (current === buf && current.done) {
+        current.listeners.clear()
+        this.buffers.delete(sessionId)
+        logger.debug('event-buffer', 'GC cleared completed buffer', {
+          sessionId,
+          eventCount: current.events.length,
+        })
+      }
+    }, GC_DELAY_MS)
+  }
+
   private ensure(sessionId: string): SessionBuffer {
     let buf = this.buffers.get(sessionId)
     if (!buf) {
-      buf = { events: [], listeners: new Set(), done: false }
+      buf = { events: [], listeners: new Set(), done: false, gcTimer: null }
       this.buffers.set(sessionId, buf)
     }
     return buf

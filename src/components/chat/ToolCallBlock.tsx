@@ -4,8 +4,8 @@
  */
 
 import { useState, createElement } from 'react'
-import type { Icon } from '@phosphor-icons/react'
 import {
+  type Icon,
   File,
   NotePencil,
   Terminal,

@@ -33,6 +33,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/sidecar"]
+    "externalBin": ["binaries/sidecar"],
+    "resources": ["../resources/bin/*", "../resources/skills/**/*"]
   }
 }

@@ -5,11 +5,10 @@
  * Since MiniClaw doesn't use Vercel AI SDK, ToolUIPart types are defined locally.
  */
 
-import type { ComponentProps, ReactNode } from 'react'
+import { type ComponentProps, type ReactNode, createContext, useContext } from 'react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { createContext, useContext } from 'react'
 
 // Local type definitions (replaces Vercel AI SDK's ToolUIPart)
 type ToolUIPartState =

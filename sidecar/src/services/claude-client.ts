@@ -6,30 +6,39 @@
  * no image-agent, no Bridge. Pure AI conversation streaming.
  */
 
-import { query } from '@anthropic-ai/claude-agent-sdk'
-import type {
-  SDKAssistantMessage,
-  SDKUserMessage,
-  SDKResultMessage,
-  SDKPartialAssistantMessage,
-  SDKSystemMessage,
-  SDKToolProgressMessage,
-  Options,
-  McpStdioServerConfig,
-  McpSSEServerConfig,
-  McpHttpServerConfig,
-  McpServerConfig as SdkMcpServerConfig,
+import {
+  query,
+  type SDKAssistantMessage,
+  type SDKUserMessage,
+  type SDKResultMessage,
+  type SDKPartialAssistantMessage,
+  type SDKSystemMessage,
+  type SDKToolProgressMessage,
+  type Options,
+  type McpStdioServerConfig,
+  type McpSSEServerConfig,
+  type McpHttpServerConfig,
+  type McpServerConfig as SdkMcpServerConfig,
+  type PermissionResult,
 } from '@anthropic-ai/claude-agent-sdk'
 // SDK-embedded CLI: in dev mode returns the node_modules path directly;
 // in `bun build --compile` extracts from $bunfs to a temp directory.
 import embeddedCliPath from '@anthropic-ai/claude-agent-sdk/embed'
 import type { McpServerConfig, TokenUsage, PermissionRequestEvent } from '../../../shared/types'
-import type { PermissionResult } from '@anthropic-ai/claude-agent-sdk'
 import { getSetting, getProvider, updateSdkSessionId } from '../db'
 import { findClaudeBinary, getExpandedPath } from './platform'
 import { captureModels } from './sdk-capabilities'
 import { logger } from '../utils/logger'
 import os from 'os'
+
+// Pre-compiled regexes for stripping ANSI escapes and C0 control chars.
+// These intentionally match control characters — suppress no-control-regex.
+/* eslint-disable no-control-regex -- intentional: these regexes strip ANSI escapes and C0 control chars */
+const RE_CONTROL_CHARS = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g
+const RE_ANSI_CSI = /\x1B\[[0-9;]*[a-zA-Z]/g
+const RE_ANSI_OSC = /\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g
+const RE_C0_STRIP = /[\x00-\x08\x0B\x0C\x0E-\x1F]/g
+/* eslint-enable no-control-regex */
 
 // ==========================================
 // Active conversations registry (for interrupt)
@@ -127,7 +136,7 @@ function sanitizeEnv(env: Record<string, string>): Record<string, string> {
   const clean: Record<string, string> = {}
   for (const [key, value] of Object.entries(env)) {
     if (typeof value === 'string') {
-      clean[key] = value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+      clean[key] = value.replace(RE_CONTROL_CHARS, '')
     }
   }
   return clean
@@ -150,6 +159,9 @@ export interface StreamChatOptions {
   permissionProfile?: 'default' | 'full_access'
   providerId?: string
   conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>
+  /** File attachments saved to disk by the chat route.
+   *  Images include base64 `data` for vision; non-images only have `path`. */
+  files?: Array<{ path: string; name: string; type: string; data?: string }>
 }
 
 // ==========================================
@@ -158,6 +170,7 @@ export interface StreamChatOptions {
 
 interface PendingPermission {
   resolve: (result: PermissionResult) => void
+  toolInput: Record<string, unknown>
 }
 
 const pendingPermissions = new Map<string, PendingPermission>()
@@ -166,11 +179,15 @@ export function resolvePermission(permissionId: string, allow: boolean, updatedI
   const pending = pendingPermissions.get(permissionId)
   if (!pending) return
   if (allow) {
-    // Only include updatedInput when it's a non-null object — Zod rejects
-    // `undefined` for Record<string, unknown> in the SDK's union schema.
     const result: PermissionResult = { behavior: 'allow' }
+    // Use frontend-provided updatedInput if present, otherwise fall back
+    // to the original toolInput captured at registration time.
+    // The SDK requires updatedInput to re-execute the tool — without it
+    // the tool receives empty/undefined input and fails.
     if (updatedInput && typeof updatedInput === 'object') {
       result.updatedInput = updatedInput as Record<string, unknown>
+    } else {
+      result.updatedInput = pending.toolInput
     }
     pending.resolve(result)
   } else {
@@ -198,7 +215,88 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
     permissionMode,
     permissionProfile,
     providerId,
+    files,
   } = options
+
+  // Build the final prompt. When images are attached, we must use the SDK's
+  // multi-modal format (AsyncIterable<SDKUserMessage> with image content blocks)
+  // so the model receives them via the vision API — NOT as file path references.
+  // Non-image files are referenced by path so the SDK reads them via the Read tool.
+  function buildFinalPrompt(): string | AsyncIterable<SDKUserMessage> {
+    if (!files || files.length === 0) return prompt
+
+    const imageFiles = files.filter((f) => f.type.startsWith('image/') && f.data)
+    const nonImageFiles = files.filter((f) => !f.type.startsWith('image/'))
+
+    // Start with the user's text prompt
+    let textPrompt = prompt
+
+    // Non-image files: prepend path references so the model uses Read tool
+    if (nonImageFiles.length > 0) {
+      const fileRefs = nonImageFiles
+        .map((f) => `[User attached file: ${f.path} (${f.name})]`)
+        .join('\n')
+      textPrompt = `${fileRefs}\n\nPlease read the attached file(s) above using your Read tool, then respond to the user's message:\n\n${prompt}`
+    }
+
+    // Images: build multi-modal SDKUserMessage with base64 content blocks
+    if (imageFiles.length > 0) {
+      const contentBlocks: Array<
+        | {
+            type: 'image'
+            source: {
+              type: 'base64'
+              media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+              data: string
+            }
+          }
+        | { type: 'text'; text: string }
+      > = []
+
+      for (const img of imageFiles) {
+        contentBlocks.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: (img.type || 'image/png') as
+              | 'image/jpeg'
+              | 'image/png'
+              | 'image/gif'
+              | 'image/webp',
+            data: img.data!,
+          },
+        })
+      }
+
+      // Append text prompt after all image blocks
+      contentBlocks.push({ type: 'text', text: textPrompt })
+
+      const userMessage: SDKUserMessage = {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: contentBlocks,
+        },
+        parent_tool_use_id: null,
+        session_id: sdkSessionId || '',
+      }
+
+      logger.info('claude', 'Built multi-modal prompt with vision content blocks', {
+        sessionId,
+        imageCount: imageFiles.length,
+        nonImageCount: nonImageFiles.length,
+      })
+
+      return (async function* () {
+        yield userMessage
+      })()
+    }
+
+    // No images, just return enriched text prompt
+    return textPrompt
+  }
+
+  const finalPrompt = buildFinalPrompt()
 
   return new ReadableStream<string>({
     async start(controller) {
@@ -210,6 +308,7 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
         ? workingDirectory.replace(/^~/, os.homedir())
         : workingDirectory
 
+      const isMultiModal = typeof finalPrompt !== 'string'
       logger.info('claude', 'streamChat.start', {
         sessionId,
         prompt: prompt.slice(0, 100),
@@ -217,6 +316,8 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
         hasSystemPrompt: !!systemPrompt,
         workingDirectory,
         resolvedCwd,
+        isMultiModal,
+        fileCount: files?.length ?? 0,
       })
 
       try {
@@ -367,9 +468,51 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
 
         // Permission handler
         queryOptions.canUseTool = async (toolName, input, opts) => {
+          // Log every canUseTool invocation for diagnostics
+          logger.info('claude', 'canUseTool called', {
+            sessionId,
+            toolName,
+            inputPreview: JSON.stringify(input).slice(0, 200),
+          })
+
           // Auto-approve when session has full_access profile
           if (sessionBypass) {
-            return { behavior: 'allow' } as PermissionResult
+            const updatedInput = (input && typeof input === 'object' ? input : {}) as Record<
+              string,
+              unknown
+            >
+            return { behavior: 'allow', updatedInput } as PermissionResult
+          }
+
+          // Auto-approve browser automation — covers both the Skill tool
+          // (loading miniclaw-browser skill) and Bash tool (running CLI commands).
+          // The skill's allowed-tools YAML doesn't reliably bypass the canUseTool
+          // callback, so we handle it explicitly here.
+          const inp = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
+          const lowerTool = toolName.toLowerCase()
+
+          // Skill tool: auto-approve when loading miniclaw-browser skill
+          if (lowerTool === 'skill' && inp.skill === 'miniclaw-browser') {
+            logger.info('claude', 'Auto-approved miniclaw-browser skill', { sessionId, toolName })
+            return { behavior: 'allow', updatedInput: inp } as PermissionResult
+          }
+
+          // Bash tool: auto-approve browser CLI commands
+          if (lowerTool === 'bash' || lowerTool === 'bashtool' || lowerTool.includes('bash')) {
+            const cmd = (inp.command as string)?.trim()
+            if (
+              cmd &&
+              (cmd.startsWith('miniclaw-desk browser-action') ||
+                cmd.startsWith('miniclaw-desk browser') ||
+                cmd.startsWith('agent-browser'))
+            ) {
+              logger.info('claude', 'Auto-approved browser command', {
+                sessionId,
+                toolName,
+                cmd: cmd.slice(0, 100),
+              })
+              return { behavior: 'allow', updatedInput: inp } as PermissionResult
+            }
           }
 
           const permId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -388,9 +531,27 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
             }),
           )
 
-          // Wait for user response
+          // Wait for user response — store original input so resolvePermission
+          // can inject it back as updatedInput when the user allows.
+          const toolInput = (input && typeof input === 'object' ? input : {}) as Record<
+            string,
+            unknown
+          >
           return new Promise<PermissionResult>((resolve) => {
-            pendingPermissions.set(permId, { resolve })
+            pendingPermissions.set(permId, { resolve, toolInput })
+
+            // Auto-deny if the SDK aborts (user interrupt / connection drop)
+            const signal = (opts as Record<string, unknown>).signal as AbortSignal | undefined
+            if (signal) {
+              const onAbort = () => {
+                if (pendingPermissions.has(permId)) {
+                  pendingPermissions.delete(permId)
+                  resolve({ behavior: 'deny', message: 'Request aborted' })
+                }
+              }
+              signal.addEventListener('abort', onAbort, { once: true })
+            }
+
             // Auto-timeout after 5 minutes
             setTimeout(
               () => {
@@ -406,10 +567,11 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
 
         // Capture stderr
         queryOptions.stderr = (data: string) => {
+          // Strip ANSI escape sequences and C0 control chars from stderr
           const cleaned = data
-            .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
-            .replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, '')
-            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+            .replace(RE_ANSI_CSI, '')
+            .replace(RE_ANSI_OSC, '')
+            .replace(RE_C0_STRIP, '')
             .replace(/\r\n/g, '\n')
             .replace(/\r/g, '\n')
             .trim()
@@ -428,7 +590,7 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
           mcpServerCount: queryOptions.mcpServers ? Object.keys(queryOptions.mcpServers).length : 0,
         })
 
-        const conversation = query({ prompt, options: queryOptions })
+        const conversation = query({ prompt: finalPrompt, options: queryOptions })
 
         // Fire-and-forget: capture SDK-reported models for the model selector.
         // Uses providerId so different providers get separate caches.

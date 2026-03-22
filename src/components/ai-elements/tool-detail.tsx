@@ -5,12 +5,18 @@
  * Uses local type definitions instead of Vercel AI SDK's ToolUIPart.
  */
 
-import type { ComponentProps, ReactNode } from 'react'
+import {
+  type ComponentProps,
+  type ReactNode,
+  createContext,
+  isValidElement,
+  useContext,
+  useState,
+} from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import { CheckCircle, CaretDown, Circle, Clock, Wrench, XCircle } from '@phosphor-icons/react'
-import { createContext, isValidElement, useContext, useState } from 'react'
 import { CodeBlock } from './code-block'
 
 // Local type for tool state (replaces ToolUIPart['state'])

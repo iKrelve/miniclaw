@@ -3,16 +3,9 @@
  * Adapted from CodePilot's ai-elements/reasoning.tsx.
  */
 
-import type { ComponentProps, ReactNode } from 'react'
-import { useControllableState } from '@radix-ui/react-use-controllable-state'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { cn } from '@/lib/utils'
-import { cjk } from '@streamdown/cjk'
-import { code } from '@streamdown/code'
-import { math } from '@streamdown/math'
-import { mermaid } from '@streamdown/mermaid'
-import { Brain, CaretDown } from '@phosphor-icons/react'
 import {
+  type ComponentProps,
+  type ReactNode,
   createContext,
   memo,
   useCallback,
@@ -22,6 +15,14 @@ import {
   useRef,
   useState,
 } from 'react'
+import { useControllableState } from '@radix-ui/react-use-controllable-state'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { cn } from '@/lib/utils'
+import { cjk } from '@streamdown/cjk'
+import { code } from '@streamdown/code'
+import { math } from '@streamdown/math'
+import { mermaid } from '@streamdown/mermaid'
+import { Brain, CaretDown } from '@phosphor-icons/react'
 import { Streamdown } from 'streamdown'
 import { Shimmer } from './shimmer'
 

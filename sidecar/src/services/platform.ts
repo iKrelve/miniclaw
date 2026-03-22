@@ -27,6 +27,7 @@ function getExtraPathDirs(): string[] {
     ]
   }
   return [
+    path.join(home, '.miniclaw', 'bin'),
     path.join(home, '.local', 'bin'),
     path.join(home, '.claude', 'bin'),
     path.join(home, '.bun', 'bin'),

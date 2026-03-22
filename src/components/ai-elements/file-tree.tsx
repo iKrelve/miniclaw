@@ -3,11 +3,18 @@
  * Adapted from CodePilot's ai-elements/file-tree.tsx.
  */
 
-import type { HTMLAttributes, ReactNode } from 'react'
+import {
+  type HTMLAttributes,
+  type ReactNode,
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from 'react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import { Folder, FolderOpen, File, CaretRight, Plus } from '@phosphor-icons/react'
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 
 interface FileTreeContextType {
   expandedPaths: Set<string>

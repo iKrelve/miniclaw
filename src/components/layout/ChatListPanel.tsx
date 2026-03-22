@@ -52,23 +52,49 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [pending, setPending] = useState<PendingDelete>(null)
 
-  // Load sessions on mount
+  // Load sessions on mount; restore persisted activeSessionId if still valid
   useEffect(() => {
     if (!baseUrl) return
     fetch(`${baseUrl}/sessions`)
       .then((res) => res.json())
-      .then((data) => setSessions(data.sessions || []))
+      .then((data) => {
+        const list = data.sessions || []
+        setSessions(list)
+        // If a persisted session ID exists but hasn't been loaded yet, validate & restore
+        if (activeSessionId && list.some((s: { id: string }) => s.id === activeSessionId)) {
+          onSelectSession(activeSessionId)
+        } else if (activeSessionId && !list.some((s: { id: string }) => s.id === activeSessionId)) {
+          // Persisted session no longer exists — clear stale ID
+          setActiveSession(null)
+        }
+      })
       .catch(() => {})
-  }, [baseUrl, setSessions])
+    // Run only once on mount — activeSessionId read from store initial value
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseUrl])
 
-  // Periodic refresh
+  // Periodic refresh — merge server data with locally-added sessions.
+  // Without merging, a session just added via `addSession` (optimistic, at
+  // index 0) can jump to a different position when the 5s poll replaces the
+  // array with server-ordered data where it may not yet appear or may have
+  // an older `updated_at` than other active sessions.
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   useEffect(() => {
     if (!baseUrl) return
     intervalRef.current = setInterval(() => {
       fetch(`${baseUrl}/sessions`)
         .then((res) => res.json())
-        .then((data) => setSessions(data.sessions || []))
+        .then((data) => {
+          const server: Array<{ id: string }> = data.sessions || []
+          const serverIds = new Set(server.map((s) => s.id))
+
+          // Preserve any locally-added sessions that the server hasn't
+          // returned yet (e.g. just created, next poll will include it).
+          const { sessions: local } = useAppStore.getState()
+          const localOnly = local.filter((s) => !serverIds.has(s.id))
+
+          setSessions([...localOnly, ...server] as typeof local)
+        })
         .catch(() => {})
     }, 5000)
     return () => {

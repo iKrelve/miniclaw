@@ -6,7 +6,8 @@ pre-commit:
   commands:
     lint:
       glob: '*.{ts,tsx}'
-      run: bunx oxlint {staged_files}
+      exclude: 'vite\.config\.ts$'
+      run: bunx oxlint -c oxlint.json {staged_files}
     format-check:
       glob: '*.{ts,tsx}'
       run: bunx oxfmt --check {staged_files}

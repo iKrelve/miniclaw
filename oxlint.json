@@ -19,8 +19,7 @@
     "prefer-const": "warn",
     "eqeqeq": ["warn", "smart"],
     "react-hooks/rules-of-hooks": "error",
-    "react-hooks/exhaustive-deps": "warn",
-    "react-refresh/only-export-components": ["warn", { "allowConstantExport": true }]
+    "react-hooks/exhaustive-deps": "warn"
   },
   "ignorePatterns": ["dist/", "dist-electron/", "release/", "node_modules/", "src-tauri/target/"]
 }

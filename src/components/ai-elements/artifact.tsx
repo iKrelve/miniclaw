@@ -3,12 +3,11 @@
  * Adapted from CodePilot's ai-elements/artifact.tsx.
  */
 
-import type { Icon as PhosphorIcon } from '@phosphor-icons/react'
+import { type Icon as PhosphorIcon, X } from '@phosphor-icons/react'
 import type { ComponentProps, HTMLAttributes } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { X } from '@phosphor-icons/react'
 
 export type ArtifactProps = HTMLAttributes<HTMLDivElement>
 

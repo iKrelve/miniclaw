@@ -22,90 +22,97 @@ interface Message_ {
 }
 
 // ---------------------------------------------------------------------------
-// Tool block parsing (from content JSON array)
+// Content segment parsing — preserves text ↔ tool interleaved order
 // ---------------------------------------------------------------------------
 
-interface ToolBlock {
-  type: 'tool_use' | 'tool_result'
-  id?: string
-  name?: string
-  input?: unknown
-  content?: string
-  is_error?: boolean
+interface PairedTool {
+  name: string
+  input: unknown
+  result?: string
+  isError?: boolean
 }
 
-function parseToolBlocks(content: string): { text: string; tools: ToolBlock[] } {
-  const tools: ToolBlock[] = []
-  let text = ''
+export type ContentSegment =
+  | { kind: 'text'; content: string }
+  | { kind: 'tool_group'; tools: PairedTool[] }
 
-  // Try JSON array format (SDK structured content)
-  if (content.startsWith('[')) {
-    try {
-      const blocks = JSON.parse(content) as Array<{
-        type: string
-        text?: string
-        id?: string
-        name?: string
-        input?: unknown
-        tool_use_id?: string
-        content?: string
-        is_error?: boolean
-      }>
+/**
+ * Parse a persisted assistant message into ordered segments.
+ * DB stores a JSON array of `[{text}, {tool_use}, {tool_result}, {text}, ...]`.
+ * This function preserves that order and groups consecutive tool_use/tool_result
+ * pairs into tool_group segments, with text segments in between.
+ */
+function parseContentSegments(content: string): { segments: ContentSegment[]; fullText: string } {
+  if (!content.startsWith('[')) {
+    return { segments: [{ kind: 'text', content: content.trim() }], fullText: content.trim() }
+  }
 
-      for (const block of blocks) {
-        if (block.type === 'text' && block.text) {
-          text += block.text
-        } else if (block.type === 'tool_use') {
-          tools.push({ type: 'tool_use', id: block.id, name: block.name, input: block.input })
-        } else if (block.type === 'tool_result') {
-          tools.push({
-            type: 'tool_result',
-            id: block.tool_use_id,
-            content: block.content,
-            is_error: block.is_error,
-          })
-        }
+  try {
+    const blocks = JSON.parse(content) as Array<{
+      type: string
+      text?: string
+      id?: string
+      name?: string
+      input?: unknown
+      tool_use_id?: string
+      content?: string
+      is_error?: boolean
+    }>
+
+    // Build a result map for pairing tool_use → tool_result
+    const resultMap = new Map<string, { content?: string; is_error?: boolean }>()
+    for (const b of blocks) {
+      if (b.type === 'tool_result' && b.tool_use_id) {
+        resultMap.set(b.tool_use_id, { content: b.content, is_error: b.is_error })
       }
-
-      return { text: text.trim(), tools }
-    } catch {
-      // Not valid JSON, fall through
     }
-  }
 
-  return { text: content.trim(), tools: [] }
-}
+    const segments: ContentSegment[] = []
+    let textBuf = ''
+    let toolBuf: PairedTool[] = []
 
-function pairTools(
-  tools: ToolBlock[],
-): Array<{ name: string; input: unknown; result?: string; isError?: boolean }> {
-  const paired: Array<{ name: string; input: unknown; result?: string; isError?: boolean }> = []
-
-  const resultMap = new Map<string, ToolBlock>()
-  for (const t of tools) {
-    if (t.type === 'tool_result' && t.id) resultMap.set(t.id, t)
-  }
-
-  for (const t of tools) {
-    if (t.type === 'tool_use' && t.name) {
-      const result = t.id ? resultMap.get(t.id) : undefined
-      paired.push({
-        name: t.name,
-        input: t.input,
-        result: result?.content,
-        isError: result?.is_error,
-      })
+    const flushText = () => {
+      if (textBuf.trim()) {
+        segments.push({ kind: 'text', content: textBuf.trim() })
+      }
+      textBuf = ''
     }
-  }
-
-  // Orphan results without matching tool_use
-  for (const t of tools) {
-    if (t.type === 'tool_result' && !tools.some((u) => u.type === 'tool_use' && u.id === t.id)) {
-      paired.push({ name: 'tool_result', input: {}, result: t.content, isError: t.is_error })
+    const flushTools = () => {
+      if (toolBuf.length > 0) {
+        segments.push({ kind: 'tool_group', tools: [...toolBuf] })
+        toolBuf = []
+      }
     }
-  }
 
-  return paired
+    let fullText = ''
+
+    for (const b of blocks) {
+      if (b.type === 'text' && b.text) {
+        // Text after tools → flush tools first
+        flushTools()
+        textBuf += b.text
+        fullText += b.text
+      } else if (b.type === 'tool_use' && b.name) {
+        // Tool after text → flush text first
+        flushText()
+        const result = b.id ? resultMap.get(b.id) : undefined
+        toolBuf.push({
+          name: b.name,
+          input: b.input,
+          result: result?.content,
+          isError: result?.is_error,
+        })
+      }
+      // tool_result is consumed via resultMap above, skip standalone
+    }
+
+    flushTools()
+    flushText()
+
+    return { segments, fullText: fullText.trim() }
+  } catch {
+    return { segments: [{ kind: 'text', content: content.trim() }], fullText: content.trim() }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -220,15 +227,18 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
   const [overflowing, setOverflowing] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
 
-  // Parse tool blocks + file attachments
-  const { text, pairedTools, files } = useMemo(() => {
+  // Parse content into ordered segments (text ↔ tool interleaved)
+  const {
+    segments,
+    fullText: text,
+    files,
+  } = useMemo(() => {
     if (isUser) {
-      // User messages may have <!--files:...--> prefix
       const { text, files } = parseMessageFiles(message.content)
-      return { text, pairedTools: [] as ReturnType<typeof pairTools>, files }
+      return { segments: [] as ContentSegment[], fullText: text, files }
     }
-    const { text, tools } = parseToolBlocks(message.content)
-    return { text, pairedTools: pairTools(tools), files: [] as FileAttachment[] }
+    const { segments, fullText } = parseContentSegments(message.content)
+    return { segments, fullText, files: [] as FileAttachment[] }
   }, [message.content, isUser])
 
   useEffect(() => {
@@ -244,59 +254,63 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
   return (
     <Message from={isUser ? 'user' : 'assistant'}>
       <MessageContent>
-        {/* Tool calls for assistant messages */}
-        {!isUser && pairedTools.length > 0 && (
-          <ToolActionsGroup
-            tools={pairedTools.map((tool, i) => ({
-              id: `hist-${i}`,
-              name: tool.name,
-              input: tool.input,
-              result: tool.result,
-              isError: tool.isError,
-            }))}
-          />
-        )}
-
         {/* File attachments for user messages */}
         {isUser && files.length > 0 && <FileAttachmentDisplay files={files} />}
 
-        {/* Text content */}
-        {text &&
-          (isUser ? (
-            <div className="relative">
-              <div
-                ref={contentRef}
-                className="text-sm whitespace-pre-wrap break-words transition-[max-height] duration-300 ease-in-out overflow-hidden"
-                style={overflowing && !expanded ? { maxHeight: `${COLLAPSE_HEIGHT}px` } : undefined}
-              >
-                {text}
-              </div>
-              {overflowing && !expanded && (
-                <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-secondary to-transparent pointer-events-none" />
-              )}
-              {overflowing && (
-                <button
-                  type="button"
-                  onClick={() => setExpanded(!expanded)}
-                  className="relative z-10 flex items-center gap-1 mt-1 text-xs text-muted-foreground hover:text-foreground h-auto px-1 py-0.5"
-                >
-                  {expanded ? (
-                    <>
-                      <CaretUp size={12} />
-                      <span>收起</span>
-                    </>
-                  ) : (
-                    <>
-                      <CaretDown size={12} />
-                      <span>展开</span>
-                    </>
-                  )}
-                </button>
-              )}
+        {/* Assistant messages: interleaved text ↔ tool groups */}
+        {!isUser &&
+          segments.length > 0 &&
+          segments.map((seg, i) =>
+            seg.kind === 'tool_group' ? (
+              <ToolActionsGroup
+                key={`seg-${i}`}
+                tools={seg.tools.map((tool, j) => ({
+                  id: `hist-${i}-${j}`,
+                  name: tool.name,
+                  input: tool.input,
+                  result: tool.result,
+                  isError: tool.isError,
+                }))}
+              />
+            ) : (
+              <AssistantTextContent key={`seg-${i}`} text={seg.content} />
+            ),
+          )}
+
+        {/* User text content */}
+        {isUser && text && (
+          <div className="relative">
+            <div
+              ref={contentRef}
+              className="text-sm whitespace-pre-wrap break-words transition-[max-height] duration-300 ease-in-out overflow-hidden"
+              style={overflowing && !expanded ? { maxHeight: `${COLLAPSE_HEIGHT}px` } : undefined}
+            >
+              {text}
             </div>
-          ) : (
-            <AssistantTextContent text={text} />
-          ))}
+            {overflowing && !expanded && (
+              <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-secondary to-transparent pointer-events-none" />
+            )}
+            {overflowing && (
+              <button
+                type="button"
+                onClick={() => setExpanded(!expanded)}
+                className="relative z-10 flex items-center gap-1 mt-1 text-xs text-muted-foreground hover:text-foreground h-auto px-1 py-0.5"
+              >
+                {expanded ? (
+                  <>
+                    <CaretUp size={12} />
+                    <span>收起</span>
+                  </>
+                ) : (
+                  <>
+                    <CaretDown size={12} />
+                    <span>展开</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        )}
       </MessageContent>
 
       {/* Footer — timestamp + token usage + copy (hover to show) */}

@@ -5,10 +5,16 @@
  */
 
 import { createElement, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { BundledLanguage, BundledTheme, HighlighterGeneric, ThemedToken } from 'shiki'
-import { bundledLanguages, createHighlighter } from 'shiki'
-import type { Icon } from '@phosphor-icons/react'
 import {
+  type BundledLanguage,
+  type BundledTheme,
+  type HighlighterGeneric,
+  type ThemedToken,
+  bundledLanguages,
+  createHighlighter,
+} from 'shiki'
+import {
+  type Icon,
   Check,
   Copy,
   CaretDown,

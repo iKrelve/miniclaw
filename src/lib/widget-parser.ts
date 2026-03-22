@@ -97,12 +97,12 @@ function extractTruncatedWidget(fenceBody: string): ShowWidgetData | null {
   if (raw.endsWith('\\')) raw = raw.slice(0, -1)
   try {
     const widgetCode = raw
-      .replace(/\\\\/g, '\x00BACKSLASH\x00')
+      .replace(/\\\\/g, '%%BACKSLASH%%')
       .replace(/\\n/g, '\n')
       .replace(/\\t/g, '\t')
       .replace(/\\r/g, '\r')
       .replace(/\\"/g, '"')
-      .replace(/\x00BACKSLASH\x00/g, '\\')
+      .replace(/%%BACKSLASH%%/g, '\\')
     if (widgetCode.length < 10) return null
 
     let title: string | undefined

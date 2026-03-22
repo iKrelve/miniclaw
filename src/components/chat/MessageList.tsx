@@ -17,7 +17,12 @@ import {
 import { MessageItem } from './MessageItem'
 import { StreamingMessage } from './StreamingMessage'
 import { PermissionPrompt } from './PermissionPrompt'
-import type { ToolUseInfo, ToolResultInfo, StreamMessage } from '../../hooks/useSSEStream'
+import type {
+  ToolUseInfo,
+  ToolResultInfo,
+  StreamMessage,
+  StreamSegment,
+} from '../../hooks/useSSEStream'
 import logo from '../../assets/logo.png'
 
 /**
@@ -60,9 +65,10 @@ interface MessageListProps {
   streamingToolOutput?: string
   statusText?: string
   streamEvents?: StreamMessage[]
+  streamSegments?: StreamSegment[]
   onForceStop?: () => void
-  onPermissionAllow?: (id: string) => void
-  onPermissionDeny?: (id: string) => void
+  onPermissionAllow?: (id: string, updatedInput?: Record<string, unknown>) => void
+  onPermissionDeny?: (id: string, message?: string) => void
   hasMore?: boolean
   loadingMore?: boolean
   onLoadMore?: () => void
@@ -79,6 +85,7 @@ export function MessageList({
   streamingToolOutput,
   statusText,
   streamEvents = [],
+  streamSegments = [],
   onForceStop,
   onPermissionAllow,
   onPermissionDeny,
@@ -187,6 +194,7 @@ export function MessageList({
             statusText={statusText}
             thinkingContent={thinkingContent}
             isThinking={isThinking}
+            streamSegments={streamSegments}
             onForceStop={onForceStop}
           />
         )}

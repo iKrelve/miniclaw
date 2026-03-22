@@ -10,7 +10,7 @@ MiniClaw manages an external Chrome instance. The `miniclaw-desk` CLI provides a
 
 ## Prerequisites
 
-- The user must enable the browser from MiniClaw's input toolbar (有头模式 or 无头模式)
+- Chrome will auto-start when you run your first browser command — no manual setup needed.
 - `agent-browser` must be installed globally (`npm i -g agent-browser`)
 
 ## Quick Start

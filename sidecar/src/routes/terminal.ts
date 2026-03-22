@@ -8,12 +8,7 @@
  */
 
 import { Hono } from 'hono'
-import {
-  createTerminalSession,
-  getTerminalSession,
-  killTerminalSession,
-  resizeTerminal,
-} from '../services/terminal'
+import { createTerminalSession, killTerminalSession, resizeTerminal } from '../services/terminal'
 import crypto from 'crypto'
 
 const terminalRoutes = new Hono()

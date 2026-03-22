@@ -6,7 +6,7 @@
  */
 
 import { create } from 'zustand'
-import type { ChatSession, Message } from '@shared/types'
+import type { ChatSession } from '@shared/types'
 
 interface AppStore {
   // Sidecar
@@ -18,15 +18,11 @@ interface AppStore {
   sessions: ChatSession[]
   activeSessionId: string | null
   setSessions: (sessions: ChatSession[]) => void
+  /** Set active session and persist to localStorage for restore on restart */
   setActiveSession: (id: string | null) => void
   addSession: (session: ChatSession) => void
   removeSession: (id: string) => void
   updateSession: (id: string, updates: Partial<ChatSession>) => void
-
-  // Messages for active session
-  messages: Message[]
-  setMessages: (messages: Message[]) => void
-  addMessage: (message: Message) => void
 
   // Working directory (last selected project path)
   workingDirectory: string
@@ -52,24 +48,30 @@ export const useAppStore = create<AppStore>((set) => ({
 
   // Sessions
   sessions: [],
-  activeSessionId: null,
+  activeSessionId: localStorage.getItem('miniclaw:last-session-id') || null,
   setSessions: (sessions) => set({ sessions }),
-  setActiveSession: (id) => set({ activeSessionId: id }),
+  setActiveSession: (id) => {
+    if (id) {
+      localStorage.setItem('miniclaw:last-session-id', id)
+    } else {
+      localStorage.removeItem('miniclaw:last-session-id')
+    }
+    set({ activeSessionId: id })
+  },
   addSession: (session) => set((state) => ({ sessions: [session, ...state.sessions] })),
   removeSession: (id) =>
-    set((state) => ({
-      sessions: state.sessions.filter((s) => s.id !== id),
-      activeSessionId: state.activeSessionId === id ? null : state.activeSessionId,
-    })),
+    set((state) => {
+      const clearing = state.activeSessionId === id
+      if (clearing) localStorage.removeItem('miniclaw:last-session-id')
+      return {
+        sessions: state.sessions.filter((s) => s.id !== id),
+        activeSessionId: clearing ? null : state.activeSessionId,
+      }
+    }),
   updateSession: (id, updates) =>
     set((state) => ({
       sessions: state.sessions.map((s) => (s.id === id ? { ...s, ...updates } : s)),
     })),
-
-  // Messages
-  messages: [],
-  setMessages: (messages) => set({ messages }),
-  addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
 
   // Working directory
   workingDirectory: localStorage.getItem('miniclaw:last-working-directory') || '',

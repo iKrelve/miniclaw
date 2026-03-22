@@ -5,15 +5,57 @@
  * provider. On selection, passes both providerId and modelId to the parent.
  */
 
-import { useState, useRef, useEffect, useCallback, type KeyboardEvent, type ReactNode } from 'react'
-import { Send, Square, ChevronDown, X, Sparkles } from 'lucide-react'
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  type KeyboardEvent,
+  type ClipboardEvent,
+  type DragEvent,
+  type ReactNode,
+} from 'react'
+import { Send, Square, ChevronDown, X, Sparkles, Plus, FileIcon } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useSidecar } from '../../hooks/useSidecar'
-import type { ProviderModelGroup } from '../../../shared/types'
+import type { ProviderModelGroup, FileAttachment } from '../../../shared/types'
 import { SlashCommandPopover, type SelectedSkill } from './SlashCommandPopover'
 
+// ── Attachment types ─────────────────────────────────────────────────
+
+interface AttachmentItem {
+  id: string
+  name: string
+  type: string // MIME type
+  size: number
+  url: string // blob URL for preview
+}
+
+function isImage(type: string): boolean {
+  return type.startsWith('image/')
+}
+
+async function blobUrlToBase64(url: string): Promise<string> {
+  const res = await fetch(url)
+  const blob = await res.blob()
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      resolve(result.includes(',') ? result.split(',')[1] : result)
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
+
+// ── Props ────────────────────────────────────────────────────────────
+
 interface MessageInputProps {
-  onSend: (content: string, opts?: { systemPromptAppend?: string }) => void
+  onSend: (
+    content: string,
+    opts?: { systemPromptAppend?: string; files?: FileAttachment[] },
+  ) => void
   onInterrupt?: () => void
   isStreaming: boolean
   disabled?: boolean
@@ -54,6 +96,12 @@ export function MessageInput({
   const [value, setValue] = useState('')
   const [focused, setFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Attachment state
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([])
+  const [isDragging, setIsDragging] = useState(false)
+  const dragCounter = useRef(0)
 
   // Slash command state
   const [slashVisible, setSlashVisible] = useState(false)
@@ -113,13 +161,133 @@ export function MessageInput({
     return () => document.removeEventListener('mousedown', handler)
   }, [modelOpen])
 
-  const handleSend = () => {
+  // ── Attachment helpers ──────────────────────────────────────────────
+
+  const addFiles = useCallback((files: File[]) => {
+    const items: AttachmentItem[] = files.map((f) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: f.name,
+      type: f.type || 'application/octet-stream',
+      size: f.size,
+      url: URL.createObjectURL(f),
+    }))
+    setAttachments((prev) => [...prev, ...items])
+  }, [])
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => {
+      const found = prev.find((a) => a.id === id)
+      if (found) URL.revokeObjectURL(found.url)
+      return prev.filter((a) => a.id !== id)
+    })
+  }, [])
+
+  const clearAttachments = useCallback(() => {
+    setAttachments((prev) => {
+      for (const a of prev) URL.revokeObjectURL(a.url)
+      return []
+    })
+  }, [])
+
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      for (const a of attachments) URL.revokeObjectURL(a.url)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cleanup only
+  }, [])
+
+  const handleFileInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files) addFiles(Array.from(e.target.files))
+      e.target.value = '' // reset to allow re-selecting same files
+    },
+    [addFiles],
+  )
+
+  const handlePaste = useCallback(
+    (e: ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+      const files: File[] = []
+      for (const item of items) {
+        if (item.kind === 'file') {
+          const file = item.getAsFile()
+          if (file) files.push(file)
+        }
+      }
+      if (files.length > 0) {
+        e.preventDefault()
+        addFiles(files)
+      }
+    },
+    [addFiles],
+  )
+
+  // Drag events on the input card
+  const handleDragEnter = useCallback((e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounter.current++
+    if (e.dataTransfer.types.includes('Files')) setIsDragging(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounter.current--
+    if (dragCounter.current === 0) setIsDragging(false)
+  }, [])
+
+  const handleDragOver = useCallback((e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }, [])
+
+  const handleDrop = useCallback(
+    (e: DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setIsDragging(false)
+      dragCounter.current = 0
+      const files = Array.from(e.dataTransfer.files)
+      if (files.length > 0) addFiles(files)
+    },
+    [addFiles],
+  )
+
+  // ── Send ────────────────────────────────────────────────────────────
+
+  const handleSend = async () => {
     const trimmed = value.trim()
-    if (!trimmed || disabled) return
-    const opts = selectedSkill?.content ? { systemPromptAppend: selectedSkill.content } : undefined
-    onSend(trimmed, opts)
+    const hasFiles = attachments.length > 0
+    if ((!trimmed && !hasFiles) || disabled) return
+
+    // Convert attachments to FileAttachment[]
+    let files: FileAttachment[] | undefined
+    if (hasFiles) {
+      files = await Promise.all(
+        attachments.map(async (a) => ({
+          id: a.id,
+          name: a.name,
+          type: a.type,
+          size: a.size,
+          data: await blobUrlToBase64(a.url),
+        })),
+      )
+    }
+
+    const opts: { systemPromptAppend?: string; files?: FileAttachment[] } = {}
+    if (selectedSkill?.content) opts.systemPromptAppend = selectedSkill.content
+    if (files) opts.files = files
+
+    onSend(
+      trimmed || 'Please review the attached file(s).',
+      Object.keys(opts).length > 0 ? opts : undefined,
+    )
     setValue('')
     setSelectedSkill(null)
+    clearAttachments()
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
@@ -131,6 +299,12 @@ export function MessageInput({
     // Let slash popover handle navigation keys
     if (slashVisible && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'].includes(e.key)) {
       return // SlashCommandPopover handles these via window listener
+    }
+    // Backspace removes last attachment when textarea is empty
+    if (e.key === 'Backspace' && value === '' && attachments.length > 0) {
+      e.preventDefault()
+      removeAttachment(attachments[attachments.length - 1].id)
+      return
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -175,23 +349,38 @@ export function MessageInput({
     setModelOpen(false)
   }
 
-  const canSend = !disabled && value.trim().length > 0
+  const canSend = !disabled && (value.trim().length > 0 || attachments.length > 0)
 
   // Find current model label for display
   const currentLabel = findModelLabel(groups, currentProviderId, currentModel)
 
   return (
     <div className="bg-white/80 dark:bg-zinc-950/80 backdrop-blur-lg px-4 pb-4 pt-2">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+
       <div
         className={cn(
           'relative flex flex-col',
           'rounded-2xl border shadow-sm',
           'bg-white dark:bg-zinc-900',
           'transition-shadow',
-          focused
-            ? 'border-blue-400 dark:border-blue-500 shadow-blue-100/50 dark:shadow-blue-900/30 shadow-md'
-            : 'border-zinc-200 dark:border-zinc-700',
+          isDragging
+            ? 'border-blue-400 dark:border-blue-500 shadow-blue-100/50 dark:shadow-blue-900/30 shadow-md ring-2 ring-blue-400/30'
+            : focused
+              ? 'border-blue-400 dark:border-blue-500 shadow-blue-100/50 dark:shadow-blue-900/30 shadow-md'
+              : 'border-zinc-200 dark:border-zinc-700',
         )}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
       >
         {/* Slash command popover */}
         <SlashCommandPopover
@@ -216,6 +405,38 @@ export function MessageInput({
           </div>
         )}
 
+        {/* Attachment capsules */}
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-4 pt-3 pb-1">
+            {attachments.map((a) => (
+              <span
+                key={a.id}
+                className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 pl-1.5 pr-1 py-0.5 text-xs text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700"
+              >
+                {isImage(a.type) ? (
+                  <img src={a.url} alt={a.name} className="h-5 w-5 rounded object-cover" />
+                ) : (
+                  <FileIcon size={12} className="text-zinc-500" />
+                )}
+                <span className="max-w-[100px] truncate text-[11px]">{a.name}</span>
+                <button
+                  onClick={() => removeAttachment(a.id)}
+                  className="ml-0.5 rounded-full p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Drop overlay */}
+        {isDragging && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-blue-500/10 backdrop-blur-sm">
+            <p className="text-sm font-medium text-blue-600 dark:text-blue-400">拖放文件到这里</p>
+          </div>
+        )}
+
         {/* Textarea area */}
         <textarea
           ref={textareaRef}
@@ -223,6 +444,7 @@ export function MessageInput({
           onChange={(e) => handleValueChange(e.target.value)}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
+          onPaste={handlePaste}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           placeholder={
@@ -244,8 +466,17 @@ export function MessageInput({
 
         {/* Footer toolbar */}
         <div className="flex items-center justify-between px-3 pb-3 pt-1">
-          {/* Left: model selector + hints */}
+          {/* Left: attach + model selector + hints */}
           <div className="flex items-center gap-3">
+            {/* Attach file button */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center justify-center h-7 w-7 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 transition-colors"
+              title="添加附件"
+            >
+              <Plus size={16} />
+            </button>
+
             {/* Model selector button */}
             <div ref={modelRef} className="relative">
               <button

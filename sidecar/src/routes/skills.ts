@@ -303,7 +303,7 @@ skillsRoutes.get('/:name', (c) => {
     ...legacySkills,
   ]
 
-  let skill = all.find((s) => {
+  const skill = all.find((s) => {
     if (s.name !== name) return false
     // If source is specified, match installedSource for installed skills
     if (source && s.source === 'installed') {
@@ -416,8 +416,6 @@ skillsRoutes.patch('/:name', async (c) => {
 skillsRoutes.delete('/:name', async (c) => {
   const name = c.req.param('name')
   const cwd = c.req.query('cwd') || undefined
-  const source = c.req.query('source') || undefined
-
   const globalSkills = scanDirectory(getGlobalCommandsDir(), 'global')
   const projectSkills = scanDirectory(getProjectCommandsDir(cwd), 'project')
   const legacySkills = scanDirectory(getLegacySkillsDir(), 'global')

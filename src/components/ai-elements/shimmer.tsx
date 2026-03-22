@@ -2,8 +2,7 @@
  * Shimmer — animated text loading indicator with sweeping gradient.
  */
 
-import type { CSSProperties } from 'react'
-import { memo, useMemo } from 'react'
+import { type CSSProperties, memo, useMemo } from 'react'
 import { motion } from 'motion/react'
 import { cn } from '../../lib/utils'
 

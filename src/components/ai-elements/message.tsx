@@ -3,8 +3,7 @@
  * Provides user/assistant styling and Streamdown-based Markdown rendering.
  */
 
-import type { HTMLAttributes, ComponentProps } from 'react'
-import { memo } from 'react'
+import { type HTMLAttributes, type ComponentProps, memo } from 'react'
 import { cjk } from '@streamdown/cjk'
 import { createCodePlugin } from '@streamdown/code'
 import { math } from '@streamdown/math'

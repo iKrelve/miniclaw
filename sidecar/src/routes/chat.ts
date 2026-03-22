@@ -21,9 +21,12 @@ import {
   getSetting,
 } from '../db'
 import { loadMcpServers } from '../services/mcp-manager'
-import type { McpServerConfig } from '../../../shared/types'
+import type { McpServerConfig, FileAttachment } from '../../../shared/types'
 import { logger } from '../utils/logger'
 import { eventBuffer } from '../services/event-buffer'
+import fs from 'fs'
+import path from 'path'
+import os from 'os'
 
 const chatRoutes = new Hono()
 
@@ -33,7 +36,15 @@ const chatRoutes = new Hono()
 
 chatRoutes.post('/', async (c) => {
   const body = await c.req.json()
-  const { session_id, content, model, mode, provider_id, systemPromptAppend } = body
+  const { session_id, content, model, mode, provider_id, systemPromptAppend, files } = body as {
+    session_id: string
+    content: string
+    model?: string
+    mode?: string
+    provider_id?: string
+    systemPromptAppend?: string
+    files?: FileAttachment[]
+  }
 
   logger.info('chat', 'POST /chat request', {
     session_id,
@@ -41,6 +52,7 @@ chatRoutes.post('/', async (c) => {
     model,
     mode,
     provider_id,
+    fileCount: files?.length ?? 0,
   })
 
   if (!session_id || !content) {
@@ -61,8 +73,42 @@ chatRoutes.post('/', async (c) => {
     return c.json({ error: 'Session is busy', code: 'SESSION_BUSY' }, 409)
   }
 
+  // Save files to disk and build attachment list for the SDK.
+  // Images: preserve base64 data (needed for vision multi-modal content blocks).
+  // Non-images: only keep the file path (SDK reads them via Read tool).
+  const fileAttachments: Array<{ path: string; name: string; type: string; data?: string }> = []
+  if (files && files.length > 0) {
+    const uploadDir = path.join(os.homedir(), '.miniclaw', 'uploads')
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true })
+    for (const file of files) {
+      const safeName = path.basename(file.name).replace(/[^a-zA-Z0-9._-]/g, '_')
+      const fileName = `${file.id}-${safeName}`
+      const filePath = path.join(uploadDir, fileName)
+      fs.writeFileSync(filePath, Buffer.from(file.data, 'base64'))
+      fileAttachments.push({
+        path: filePath,
+        name: file.name,
+        type: file.type,
+        // Keep base64 for images so claude-client can build vision content blocks
+        data: file.type.startsWith('image/') ? file.data : undefined,
+      })
+    }
+    logger.info('chat', 'Files saved to disk', {
+      count: fileAttachments.length,
+      paths: fileAttachments.map((f) => f.path),
+    })
+  }
+
+  // Build user message content with file metadata prefix (for history display).
+  // Include filePath so FileAttachmentDisplay can load images from disk.
+  const filesMeta =
+    fileAttachments.length > 0
+      ? `<!--files:${JSON.stringify(fileAttachments.map((f) => ({ name: f.name, type: f.type, filePath: f.path })))}-->`
+      : ''
+  const userContent = filesMeta + content
+
   // Save user message
-  addMessage(session_id, 'user', content)
+  addMessage(session_id, 'user', userContent)
 
   // Auto-generate title from first message
   if (session.title === 'New Chat') {
@@ -93,12 +139,15 @@ chatRoutes.post('/', async (c) => {
     workingDirectory: (session.working_directory as string) || process.cwd(),
     mcpServerCount: mcpServers ? Object.keys(mcpServers).length : 0,
     mode: mode || session.mode,
+    fileCount: fileAttachments.length,
   })
 
   setSessionRuntimeStatus(session_id, 'running')
 
-  // Clear any stale buffer from a previous conversation on this session
-  eventBuffer.clear(session_id)
+  // Reset stale buffer from a previous conversation on this session.
+  // Use reset() instead of clear() to preserve existing SSE subscribers —
+  // the frontend may have already connected via GET /chat/events/:id.
+  eventBuffer.reset(session_id)
 
   // Fire-and-forget: consume the SDK stream in the background, push events to EventBuffer
   consumeStreamInBackground(session_id, {
@@ -111,6 +160,7 @@ chatRoutes.post('/', async (c) => {
     mode: (mode || session.mode) as 'code' | 'plan' | 'ask',
     permissionProfile: (session.permission_profile as 'default' | 'full_access') || 'default',
     providerId: provider_id || (session.provider_id as string) || undefined,
+    files: fileAttachments.length > 0 ? fileAttachments : undefined,
   })
 
   // Return immediately — frontend subscribes via GET /chat/events/:id
@@ -251,6 +301,7 @@ interface BackgroundStreamOptions {
   mode?: 'code' | 'plan' | 'ask'
   permissionProfile?: 'default' | 'full_access'
   providerId?: string
+  files?: Array<{ path: string; name: string; type: string; data?: string }>
 }
 
 /**
@@ -270,6 +321,7 @@ function consumeStreamInBackground(sessionId: string, opts: BackgroundStreamOpti
     mode: opts.mode,
     permissionProfile: opts.permissionProfile,
     providerId: opts.providerId,
+    files: opts.files,
   })
 
   // Structured content blocks for DB persistence (same as before)

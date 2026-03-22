@@ -3,13 +3,19 @@
  * Adapted from CodePilot's ai-elements/chain-of-thought.tsx.
  */
 
-import type { ComponentProps, ReactNode } from 'react'
+import {
+  type ComponentProps,
+  type ReactNode,
+  createContext,
+  memo,
+  useContext,
+  useMemo,
+} from 'react'
 import { useControllableState } from '@radix-ui/react-use-controllable-state'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import { Brain, CaretDown, DotOutline } from '@phosphor-icons/react'
-import { createContext, memo, useContext, useMemo } from 'react'
 
 interface ChainOfThoughtContextValue {
   isOpen: boolean

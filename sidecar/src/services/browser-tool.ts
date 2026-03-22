@@ -13,12 +13,85 @@
  * miniclaw-browser skill installed to ~/.claude/skills/.
  */
 
-import { execFile } from 'child_process'
-import { existsSync, chmodSync } from 'fs'
-import { join, dirname, resolve } from 'path'
+import { execFile, execFileSync } from 'child_process'
+import { existsSync, chmodSync, statSync } from 'fs'
+import { join, dirname, resolve, extname } from 'path'
 import { platform, arch, homedir } from 'os'
 import { chromeManager } from './chrome-manager'
 import { logger } from '../utils/logger'
+
+// ==========================================
+// Screenshot resize — fit Anthropic Vision API limits
+// Max 1568px on longest side. Uses platform-native tools
+// (sips on macOS, ffmpeg on Linux) so no native JS addons needed.
+// ==========================================
+
+const MAX_SCREENSHOT_DIMENSION = 1568
+
+/**
+ * Resize a screenshot file in-place if it exceeds the dimension limit.
+ * Converts to JPEG quality 80 for smaller file size.
+ * Non-fatal: logs a warning and returns the original path on failure.
+ */
+async function resizeScreenshotIfNeeded(filePath: string): Promise<string> {
+  const ext = extname(filePath).toLowerCase()
+  if (ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg') return filePath
+
+  const outPath = filePath.replace(/\.[^.]+$/, '.jpg')
+
+  try {
+    if (platform() === 'darwin') {
+      // macOS: sips is built-in, fast, and reliable
+      execFileSync(
+        'sips',
+        [
+          '--resampleHeightWidthMax',
+          String(MAX_SCREENSHOT_DIMENSION),
+          '-s',
+          'format',
+          'jpeg',
+          '-s',
+          'formatOptions',
+          '80',
+          filePath,
+          '--out',
+          outPath,
+        ],
+        { timeout: 10_000, stdio: 'ignore' },
+      )
+    } else {
+      // Linux/Windows: try ffmpeg (commonly available)
+      execFileSync(
+        'ffmpeg',
+        [
+          '-y',
+          '-i',
+          filePath,
+          '-vf',
+          `scale='min(${MAX_SCREENSHOT_DIMENSION},iw)':min'(${MAX_SCREENSHOT_DIMENSION},ih)':force_original_aspect_ratio=decrease`,
+          '-q:v',
+          '2',
+          outPath,
+        ],
+        { timeout: 10_000, stdio: 'ignore' },
+      )
+    }
+
+    const stat = statSync(outPath)
+    logger.info('browser', 'Screenshot resized', {
+      original: filePath,
+      output: outPath,
+      sizeKB: Math.round(stat.size / 1024),
+    })
+    return outPath
+  } catch (err) {
+    logger.warn('browser', 'Screenshot resize failed, using original', {
+      path: filePath,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return filePath
+  }
+}
 
 // ==========================================
 // agent-browser CLI binary resolution
@@ -310,6 +383,17 @@ export async function executeBrowserAction(cmd: BrowserActionCommand): Promise<C
   return bridge.mutex.run(async () => {
     await bridge.connect(port)
     const result = await bridge.exec(cmd.action, ...(cmd.args || []))
+
+    // Post-process: resize screenshots so they fit Anthropic Vision API limits.
+    // agent-browser returns { path: "/path/to/screenshot.png" } — we resize the
+    // file in-place (to JPEG ≤1568px) before the SDK tries to read it.
+    if (cmd.action === 'screenshot' && result.success && result.data) {
+      const data = result.data as Record<string, unknown>
+      if (typeof data.path === 'string') {
+        data.path = await resizeScreenshotIfNeeded(data.path)
+      }
+    }
+
     return result
   })
 }

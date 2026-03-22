@@ -12,7 +12,7 @@ import { Reasoning, ReasoningTrigger, ReasoningContent } from '../ai-elements/re
 import { Shimmer } from '../ai-elements/shimmer'
 import { WidgetRenderer } from './WidgetRenderer'
 import { parseAllShowWidgets, computePartialWidgetKey } from '../../lib/widget-parser'
-import type { ToolUseInfo, ToolResultInfo } from '../../hooks/useSSEStream'
+import type { ToolUseInfo, ToolResultInfo, StreamSegment } from '../../hooks/useSSEStream'
 
 // ---------------------------------------------------------------------------
 // ThinkingPhaseLabel — evolves over time to reduce perceived wait
@@ -125,6 +125,7 @@ interface StreamingMessageProps {
   statusText?: string
   thinkingContent?: string
   isThinking?: boolean
+  streamSegments?: StreamSegment[]
   onForceStop?: () => void
 }
 
@@ -177,12 +178,12 @@ function renderStreamingContent(content: string, streaming: boolean) {
           if (raw.endsWith('\\')) raw = raw.slice(0, -1)
           try {
             partialCode = raw
-              .replace(/\\\\/g, '\x00BACKSLASH\x00')
+              .replace(/\\\\/g, '%%BACKSLASH%%')
               .replace(/\\n/g, '\n')
               .replace(/\\t/g, '\t')
               .replace(/\\r/g, '\r')
               .replace(/\\"/g, '"')
-              .replace(/\x00BACKSLASH\x00/g, '\\')
+              .replace(/%%BACKSLASH%%/g, '\\')
           } catch {
             partialCode = null
           }
@@ -281,6 +282,7 @@ export function StreamingMessage({
   statusText,
   thinkingContent,
   isThinking,
+  streamSegments = [],
   onForceStop,
 }: StreamingMessageProps) {
   const runningTools = toolUses.filter(
@@ -304,6 +306,9 @@ export function StreamingMessage({
     return `执行 ${tool.name}...`
   }
 
+  // Use interleaved segments if available, fallback to flat mode
+  const hasSegments = streamSegments.length > 0
+
   return (
     <Message from="assistant">
       <MessageContent>
@@ -315,26 +320,34 @@ export function StreamingMessage({
           </Reasoning>
         )}
 
-        {/* Tool calls — compact collapsible group */}
-        {toolUses.length > 0 && (
-          <ToolActionsGroup
-            tools={toolUses.map((tool) => {
-              const result = toolResults.find((r) => r.tool_use_id === tool.id)
-              return {
-                id: tool.id,
-                name: tool.name,
-                input: tool.input,
-                result: result?.content,
-                isError: result?.is_error,
-              }
-            })}
-            isStreaming={isStreaming}
-            streamingToolOutput={streamingToolOutput}
-          />
-        )}
+        {/* Interleaved text ↔ tool segments */}
+        {hasSegments &&
+          streamSegments.map((seg, i) =>
+            seg.kind === 'tool_group' ? (
+              <ToolActionsGroup
+                key={`seg-${i}`}
+                tools={seg.tools}
+                isStreaming={isStreaming}
+                streamingToolOutput={
+                  // Show tool output only on the last tool group (the active one)
+                  i === streamSegments.length - 1 ? streamingToolOutput : undefined
+                }
+              />
+            ) : renderStreamingContent(
+                seg.content,
+                isStreaming && i === streamSegments.length - 1,
+              ) ? (
+              <div key={`seg-${i}`}>
+                {renderStreamingContent(
+                  seg.content,
+                  isStreaming && i === streamSegments.length - 1,
+                )}
+              </div>
+            ) : null,
+          )}
 
-        {/* Streaming text content — with widget detection */}
-        {content && renderStreamingContent(content, isStreaming)}
+        {/* Fallback: flat mode when no segments yet (e.g. pure text, no tools) */}
+        {!hasSegments && content && renderStreamingContent(content, isStreaming)}
 
         {/* Loading indicator when no content yet */}
         {isStreaming && !content && toolUses.length === 0 && (

@@ -3,8 +3,7 @@
  * Based on use-stick-to-bottom for smart auto-scroll behavior.
  */
 
-import type { ComponentProps } from 'react'
-import { useCallback } from 'react'
+import { type ComponentProps, useCallback } from 'react'
 import { ArrowDown } from '@phosphor-icons/react'
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom'
 import { cn } from '../../lib/utils'
