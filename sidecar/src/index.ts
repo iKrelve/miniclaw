@@ -6,30 +6,109 @@
  * for the React frontend.
  */
 
-// Load local env overrides from .env.local (not committed — covered by *.local in .gitignore).
-// If scripts/refresh-env.local.sh exists (also gitignored), run it first to auto-refresh.
+// ==========================================
+// Local env overrides (.env.local — not committed, covered by *.local in .gitignore)
+// ==========================================
+// Looks for .env.local in two locations (first match wins):
+//   1. Project root (dev mode)
+//   2. ~/.miniclaw/.env.local (production / packaged app)
+//
+// If .env.local contains PROXY_CLI_COMMAND, the sidecar will
+// auto-refresh ANTHROPIC_* credentials by running that CLI with a wrapper trick.
+// This way the code has zero hardcoded tool names or URLs.
 import fs from 'fs';
 import pathMod from 'path';
-import { execSync } from 'child_process';
-const projectRoot = pathMod.resolve(import.meta.dir, '../..');
-const envLocalPath = pathMod.join(projectRoot, '.env.local');
-const refreshScript = pathMod.join(projectRoot, 'scripts', 'refresh-env.local.sh');
-if (fs.existsSync(refreshScript)) {
-  try {
-    execSync(`bash "${refreshScript}"`, { timeout: 20000, stdio: 'pipe' });
-  } catch { /* non-fatal — .env.local may still exist from previous run */ }
-}
-if (fs.existsSync(envLocalPath)) {
-  for (const line of fs.readFileSync(envLocalPath, 'utf-8').split('\n')) {
+import os from 'os';
+import { execSync, execFileSync } from 'child_process';
+
+function loadEnvFile(filePath: string): Record<string, string> {
+  const vars: Record<string, string> = {};
+  if (!fs.existsSync(filePath)) return vars;
+  for (const line of fs.readFileSync(filePath, 'utf-8').split('\n')) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
     const eq = trimmed.indexOf('=');
     if (eq < 1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    const value = trimmed.slice(eq + 1).trim();
-    if (!process.env[key]) process.env[key] = value;
+    vars[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
   }
-  console.error('[sidecar] Loaded .env.local');
+  return vars;
+}
+
+function writeEnvFile(filePath: string, vars: Record<string, string>): void {
+  const lines = ['# Auto-generated — DO NOT commit'];
+  for (const [k, v] of Object.entries(vars)) {
+    if (v) lines.push(`${k}=${v}`);
+  }
+  const dir = pathMod.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(filePath, lines.join('\n') + '\n');
+}
+
+function findCliCommand(name: string): string | undefined {
+  try {
+    const cmd = process.platform === 'win32' ? 'where' : 'which';
+    const result = execFileSync(cmd, [name], { timeout: 3000, encoding: 'utf-8' }).trim();
+    return result.split('\n')[0]?.trim() || undefined;
+  } catch { return undefined; }
+}
+
+function refreshProxyCredentials(envPath: string, cliCommand: string): void {
+  const cliBin = findCliCommand(cliCommand);
+  if (!cliBin) return;
+
+  // Verify the CLI supports --code
+  try {
+    const help = execFileSync(cliBin, ['--help'], { timeout: 5000, encoding: 'utf-8' });
+    if (!help.includes('--code')) return;
+  } catch { return; }
+
+  // Create a temp "claude" wrapper that captures ANTHROPIC_* env vars
+  const tmpDir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'proxy-env-'));
+  const captureFile = pathMod.join(tmpDir, 'env.txt');
+  try {
+    const wrapper = pathMod.join(tmpDir, 'claude');
+    fs.writeFileSync(wrapper, `#!/bin/sh\nenv | grep "^ANTHROPIC" > "${captureFile}"\nexit 0\n`);
+    fs.chmodSync(wrapper, 0o755);
+
+    const env = { ...process.env, PATH: `${tmpDir}${pathMod.delimiter}${process.env.PATH || ''}` };
+    try { execSync(`"${cliBin}" --code --print "hi"`, { timeout: 20000, env, stdio: 'pipe' }); } catch { /* ok */ }
+
+    if (!fs.existsSync(captureFile)) return;
+    const captured: Record<string, string> = {};
+    for (const line of fs.readFileSync(captureFile, 'utf-8').split('\n')) {
+      const eq = line.indexOf('=');
+      if (eq < 1) continue;
+      captured[line.slice(0, eq)] = line.slice(eq + 1).trim();
+    }
+    if (!captured.ANTHROPIC_BASE_URL || !captured.ANTHROPIC_AUTH_TOKEN) return;
+
+    // Preserve PROXY_CLI_COMMAND in .env.local so it survives rewrite
+    const updated: Record<string, string> = { PROXY_CLI_COMMAND: cliCommand, ...captured };
+    writeEnvFile(envPath, updated);
+    console.error('[sidecar] Auto-refreshed proxy credentials');
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
+}
+
+// Resolve .env.local path: project root (dev) or ~/.miniclaw/ (production)
+const projectRoot = pathMod.resolve(import.meta.dir, '../..');
+const envLocalCandidates = [
+  pathMod.join(projectRoot, '.env.local'),
+  pathMod.join(os.homedir(), '.miniclaw', '.env.local'),
+];
+const envLocalPath = envLocalCandidates.find((p) => fs.existsSync(p)) || envLocalCandidates[0];
+
+// Load existing .env.local to check for PROXY_CLI_COMMAND
+const existingVars = loadEnvFile(envLocalPath);
+if (existingVars.PROXY_CLI_COMMAND) {
+  try { refreshProxyCredentials(envLocalPath, existingVars.PROXY_CLI_COMMAND); } catch { /* non-fatal */ }
+}
+
+// Load (possibly refreshed) .env.local into process.env
+for (const [key, value] of Object.entries(loadEnvFile(envLocalPath))) {
+  if (key === 'PROXY_CLI_COMMAND') continue; // meta key, not an env var
+  if (!process.env[key]) process.env[key] = value;
 }
 
 import { Hono } from 'hono';

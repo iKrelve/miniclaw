@@ -1,12 +1,11 @@
 /**
  * 小龙虾 (MiniClaw) — SQLite Database Module
  *
- * Migrated and simplified from CodePilot's src/lib/db.ts.
- * Uses better-sqlite3 with WAL mode for concurrent reads.
+ * Uses Bun's built-in bun:sqlite with WAL mode for concurrent reads.
  * Data directory: ~/.miniclaw/miniclaw.db
  */
 
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -15,22 +14,22 @@ import crypto from 'crypto';
 const DATA_DIR = process.env.MINICLAW_DATA_DIR || path.join(os.homedir(), '.miniclaw');
 const DB_PATH = path.join(DATA_DIR, 'miniclaw.db');
 
-let db: Database.Database | null = null;
+let db: Database | null = null;
 
-export function getDb(): Database.Database {
+export function getDb(): Database {
   if (!db) {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
     db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
-    db.pragma('foreign_keys = ON');
+    db.exec('PRAGMA journal_mode = WAL');
+    db.exec('PRAGMA foreign_keys = ON');
     initSchema(db);
   }
   return db;
 }
 
-function initSchema(db: Database.Database): void {
+function initSchema(db: Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS chat_sessions (
       id TEXT PRIMARY KEY,
