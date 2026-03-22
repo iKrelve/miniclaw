@@ -32,9 +32,8 @@ type PendingDelete =
 
 export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
   const { baseUrl } = useSidecar()
-  const { sessions, activeSessionId, setSessions, setActiveSession, addSession, removeSession } =
-    useAppStore()
-  const { getEffectiveDir, pickDirectory } = useDirectoryPicker()
+  const { sessions, activeSessionId, setSessions, setActiveSession, removeSession } = useAppStore()
+  const { pickDirectory } = useDirectoryPicker()
   const [search, setSearch] = useState('')
   const [hovered, setHovered] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
@@ -64,55 +63,25 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
     }
   }, [baseUrl, setSessions])
 
-  const createSessionWithDir = useCallback(
-    async (dir: string) => {
-      if (!baseUrl) return
-      const res = await fetch(`${baseUrl}/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ working_directory: dir }),
-      })
-      const data = await res.json()
-      if (data.session) {
-        addSession(data.session)
-        setActiveSession(data.session.id)
-        onSelectSession(data.session.id)
-      }
-    },
-    [baseUrl, addSession, setActiveSession, onSelectSession],
-  )
+  // Lazy create: "New Chat" only resets to welcome screen;
+  // the actual session is created when the user sends the first message.
+  const handleNewChat = useCallback(() => {
+    // If already on the welcome screen (no active session), nothing to do
+    if (!activeSessionId) return
 
-  const handleNewChat = useCallback(async () => {
-    if (!baseUrl) return
-    const cached = getEffectiveDir()
-    if (cached) {
-      try {
-        await createSessionWithDir(cached)
-        return
-      } catch {
-        // fall through
-      }
-    }
-    const picked = await pickDirectory()
-    if (picked) {
-      try {
-        await createSessionWithDir(picked)
-      } catch {
-        // error
-      }
-    }
-  }, [baseUrl, getEffectiveDir, pickDirectory, createSessionWithDir])
+    setActiveSession(null)
+    onSelectSession('')
+  }, [activeSessionId, setActiveSession, onSelectSession])
 
   const handleOpenFolder = useCallback(async () => {
     const picked = await pickDirectory()
     if (picked) {
-      try {
-        await createSessionWithDir(picked)
-      } catch {
-        // error
-      }
+      // Just remember the directory; session will be created on first message send
+      localStorage.setItem('miniclaw:last-working-directory', picked)
+      setActiveSession(null)
+      onSelectSession('')
     }
-  }, [pickDirectory, createSessionWithDir])
+  }, [pickDirectory, setActiveSession, onSelectSession])
 
   // Stage a session for deletion (opens confirm dialog)
   const requestDeleteSession = useCallback((e: React.MouseEvent, id: string, title: string) => {
@@ -159,15 +128,14 @@ export function ChatListPanel({ open, onSelectSession }: ChatListPanelProps) {
   }, [pending, baseUrl, sessions, removeSession])
 
   const handleCreateInProject = useCallback(
-    async (e: React.MouseEvent, dir: string) => {
+    (e: React.MouseEvent, dir: string) => {
       e.stopPropagation()
-      try {
-        await createSessionWithDir(dir)
-      } catch {
-        // error
-      }
+      // Remember the target directory; session created on first message send
+      localStorage.setItem('miniclaw:last-working-directory', dir)
+      setActiveSession(null)
+      onSelectSession('')
     },
-    [createSessionWithDir],
+    [setActiveSession, onSelectSession],
   )
 
   const toggleGroup = useCallback((dir: string) => {

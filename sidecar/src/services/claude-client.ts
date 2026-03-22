@@ -21,6 +21,9 @@ import type {
   McpHttpServerConfig,
   McpServerConfig as SdkMcpServerConfig,
 } from '@anthropic-ai/claude-agent-sdk'
+// SDK-embedded CLI: in dev mode returns the node_modules path directly;
+// in `bun build --compile` extracts from $bunfs to a temp directory.
+import embeddedCliPath from '@anthropic-ai/claude-agent-sdk/embed'
 import type { McpServerConfig, TokenUsage, PermissionRequestEvent } from '../../../shared/types'
 import type { PermissionResult } from '@anthropic-ai/claude-agent-sdk'
 import { getSetting, getProvider, updateSdkSessionId } from '../db'
@@ -303,15 +306,16 @@ export function streamChat(options: StreamChatOptions): ReadableStream<string> {
           queryOptions.allowDangerouslySkipPermissions = true
         }
 
-        // Find claude binary
+        // Find claude binary: prefer system-installed claude, fall back to SDK-embedded CLI
         const claudePath = findClaudeBinary()
+        const effectiveCliPath = claudePath || embeddedCliPath
         logger.info('claude', 'Claude binary resolution', {
           sessionId,
-          claudePath: claudePath || '(not found — SDK will use default)',
+          claudePath: claudePath || '(not found)',
+          embeddedCliPath,
+          effectiveCliPath,
         })
-        if (claudePath) {
-          queryOptions.pathToClaudeCodeExecutable = claudePath
-        }
+        queryOptions.pathToClaudeCodeExecutable = effectiveCliPath
 
         if (model) queryOptions.model = model
 

@@ -126,6 +126,8 @@ export function MessageInput({
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Ignore Enter during IME composition (e.g. Chinese input choosing a candidate)
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
     // Let slash popover handle navigation keys
     if (slashVisible && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'].includes(e.key)) {
       return // SlashCommandPopover handles these via window listener
