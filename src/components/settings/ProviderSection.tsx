@@ -11,7 +11,18 @@
  */
 
 import { useEffect, useState, useCallback } from 'react'
-import { Pencil, Loader2, Server, Zap, Cloud, Globe, Cpu, Wrench } from 'lucide-react'
+import {
+  Pencil,
+  Loader2,
+  Server,
+  Zap,
+  Cloud,
+  Globe,
+  Cpu,
+  Wrench,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react'
 import { useSidecar } from '../../hooks/useSidecar'
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
@@ -186,6 +197,7 @@ function ConnectDialog({
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [extraEnv, setExtraEnv] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -194,12 +206,14 @@ function ConnectDialog({
     if (!open || !preset) return
     setError(null)
     setSaving(false)
+    setShowAdvanced(false)
     if (isEdit && editProvider) {
       setName(editProvider.name)
       setApiKey(editProvider.api_key || '')
       setBaseUrl(editProvider.base_url || '')
-      // For extra_env, try to pretty-print if it's valid JSON
-      setExtraEnv(formatJson(editProvider.base_url ? '' : preset.extra_env))
+      setExtraEnv(formatJson(preset.extra_env))
+      // Auto-expand advanced if editing and preset doesn't normally show extra_env
+      if (!preset.fields.includes('extra_env')) setShowAdvanced(true)
     } else {
       setName(preset.name)
       setApiKey('')
@@ -209,8 +223,6 @@ function ConnectDialog({
   }, [open, preset, isEdit, editProvider])
 
   if (!preset) return null
-
-  const has = (field: PresetField) => preset.fields.includes(field) || isEdit
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -262,13 +274,11 @@ function ConnectDialog({
           <DialogDescription>{preset.description}</DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          {/* Name — shown for custom preset or edit mode */}
-          {has('name') && (
-            <div>
-              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                名称
-              </label>
+        <form onSubmit={handleSubmit} className="space-y-4 min-w-0">
+          {/* Name — custom/edit mode */}
+          {(preset.fields.includes('name') || isEdit) && (
+            <div className="space-y-2">
+              <label className="text-xs text-zinc-500 dark:text-zinc-400">名称</label>
               <input
                 type="text"
                 value={name}
@@ -279,12 +289,10 @@ function ConnectDialog({
             </div>
           )}
 
-          {/* Base URL — shown when preset has it in fields, or edit mode */}
-          {has('base_url') && (
-            <div>
-              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                Base URL
-              </label>
+          {/* Base URL */}
+          {(preset.fields.includes('base_url') || isEdit) && (
+            <div className="space-y-2">
+              <label className="text-xs text-zinc-500 dark:text-zinc-400">Base URL</label>
               <input
                 type="text"
                 value={baseUrl}
@@ -295,44 +303,67 @@ function ConnectDialog({
             </div>
           )}
 
-          {/* API Key — shown when preset has it in fields */}
-          {has('api_key') && (
-            <div>
-              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                API Key
-              </label>
+          {/* API Key */}
+          {(preset.fields.includes('api_key') || isEdit) && (
+            <div className="space-y-2">
+              <label className="text-xs text-zinc-500 dark:text-zinc-400">API Key</label>
               <input
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="sk-..."
-                className={inputClass}
+                className={cn(inputClass, 'flex-1')}
                 autoFocus
               />
             </div>
           )}
 
-          {/* Extra env JSON — shown for bedrock/vertex/custom (pre-filled with defaults) */}
-          {has('extra_env') && (
-            <div>
-              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                环境变量 (JSON)
-              </label>
+          {/* Extra env JSON — always visible for bedrock/vertex/custom */}
+          {preset.fields.includes('extra_env') && (
+            <div className="space-y-2">
+              <label className="text-xs text-zinc-500 dark:text-zinc-400">环境变量 (JSON)</label>
               <textarea
                 value={extraEnv}
                 onChange={(e) => setExtraEnv(e.target.value)}
                 className={textareaClass}
-                rows={4}
+                rows={Math.min(extraEnv.split('\n').length + 1, 12)}
               />
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
-                传递给底层 Claude 进程的环境变量，JSON 格式
-              </p>
             </div>
           )}
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {/* Advanced options — collapsible for presets that don't show extra_env by default */}
+          {!preset.fields.includes('extra_env') && (
+            <>
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+              >
+                {showAdvanced ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                高级选项
+              </button>
+              {showAdvanced && (
+                <div className="space-y-4 border-t border-zinc-200 dark:border-zinc-800 pt-3">
+                  <div className="space-y-2">
+                    <label className="text-xs text-zinc-500 dark:text-zinc-400">
+                      环境变量 (JSON)
+                    </label>
+                    <textarea
+                      value={extraEnv}
+                      onChange={(e) => setExtraEnv(e.target.value)}
+                      className={textareaClass}
+                      rows={3}
+                    />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
 
-          <div className="flex justify-end gap-2 pt-2">
+          {error && <p className="text-sm text-red-500 dark:text-red-400">{error}</p>}
+
+          {/* Footer — matches CodePilot DialogFooter layout */}
+          <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 flex justify-end gap-2">
             <Button
               type="button"
               variant="outline"
