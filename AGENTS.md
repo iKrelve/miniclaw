@@ -4,9 +4,10 @@
 
 小龙虾 (MiniClaw) is a desktop AI assistant built with Tauri 2, React 19, and TypeScript. It provides a conversational AI interface powered by the Claude Code SDK (`@anthropic-ai/claude-agent-sdk`), with session management, MCP integration, file browsing, git operations, and multi-provider support.
 
-**Tech stack**: Tauri 2 (Rust) + React 19 + TypeScript 5.8 + Vite 7 + Tailwind CSS 4 + Zustand 5
+**Tech stack**: Tauri 2 (Rust) + React 19 + TypeScript 5.9 + Vite 8 + Tailwind CSS 4 + Zustand 5
 **Sidecar runtime**: Bun + Hono HTTP server + better-sqlite3
 **Package manager**: Bun (lock file: `bun.lock`)
+**Toolchain**: Oxlint (linter) + Oxfmt (formatter) + Lefthook (git hooks) + Knip (dead code)
 
 ## Architecture
 
@@ -35,7 +36,7 @@ The application is a **three-process architecture**:
 
 1. **Tauri → Sidecar**: Tauri spawns the Bun sidecar as a child process via `tauri-plugin-shell`. The sidecar prints `READY:{port}` to stdout when the HTTP server is ready.
 2. **React → Tauri**: The renderer calls `invoke('get_sidecar_port')` to learn the sidecar port.
-3. **React → Sidecar**: All business logic goes through HTTP `fetch()` to `http://127.0.0.1:{port}/...`. Chat uses SSE streaming via `POST /chat`.
+3. **React → Sidecar**: All business logic goes through HTTP `fetch()` to `http://127.0.0.1:{port}/...`. Chat uses SSE streaming via `POST /chat`. Terminal uses WebSocket via `GET /terminal/:id/ws`.
 
 ### Directory Structure
 
@@ -79,11 +80,17 @@ The application is a **three-process architecture**:
 │   │   ├── mcp.ts         # MCP server config listing + status
 │   │   ├── tasks.ts       # CRUD for session tasks
 │   │   ├── skills.ts      # Skills scanning from ~/.claude/commands + ~/.miniclaw/skills
+│   │   ├── terminal.ts    # POST /terminal (create), DELETE /:id (kill), GET /:id/ws (WebSocket)
+│   │   ├── uploads.ts     # File upload handling
 │   │   └── workspace.ts   # Workspace config files (soul.md, user.md, claude.md, memory.md)
-│   └── /services
-│       ├── claude-client.ts  # Claude Code SDK wrapper (SSE stream, permission handler, interrupt)
-│       ├── mcp-manager.ts    # MCP config loader (merges ~/.claude.json + settings + .mcp.json)
-│       └── platform.ts       # Claude binary detection + PATH expansion
+│   ├── /services
+│   │   ├── claude-client.ts  # Claude Code SDK wrapper (SSE stream, permission handler, interrupt)
+│   │   ├── mcp-manager.ts    # MCP config loader (merges ~/.claude.json + settings + .mcp.json)
+│   │   ├── platform.ts       # Claude binary detection + PATH expansion
+│   │   ├── provider-resolver.ts # Multi-provider + model resolution (Anthropic/OpenAI/Google/Bedrock/Vertex)
+│   │   └── terminal.ts       # Terminal subprocess management + WebSocket I/O streaming
+│   └── /utils
+│       └── port.ts            # Available port discovery
 
 /src-tauri                 # Tauri 2 (Rust) main process
 ├── Cargo.toml             # Rust dependencies
@@ -109,6 +116,13 @@ The application is a **three-process architecture**:
 | `bun run build` | **Full production build**: sidecar + frontend + Tauri packaging (DMG/installer) |
 | `bun run build:frontend` | TypeScript check + Vite production build (frontend only) |
 | `bun run setup` | **First-time setup**: install all deps + build sidecar binary |
+| `bun run lint` | Oxlint check on `src/` + `shared/` |
+| `bun run lint:fix` | Auto-fix lint issues |
+| `bun run format` | Oxfmt format all files |
+| `bun run format:check` | Check formatting (CI use) |
+| `bun run test` | Run sidecar tests (Bun test) |
+| `bun run deadcode` | Knip dead code / unused dependency detection |
+| `bun run check` | **One-shot validation**: format:check + lint + typecheck |
 
 ### Prerequisites
 
@@ -188,9 +202,17 @@ Environment variable placeholders (`${KEY}`) are resolved against the DB `settin
 
 ### TypeScript Configuration
 
-- **Renderer** (`tsconfig.json`): `bundler` module resolution, `react-jsx`, strict mode
+- **Renderer** (`tsconfig.json`): `bundler` module resolution, `react-jsx`, strict mode, path aliases `@/` → `src/`, `@shared/` → `shared/`
 - **Sidecar** (`sidecar/tsconfig.json`): `bundler` module resolution, `ES2022`, `@shared/*` path alias
 - **Vite/Node** (`tsconfig.node.json`): for `vite.config.ts` only
+
+### Lint & Formatting
+
+- **Linter**: Oxlint (`oxlint.json`) — React hooks rules, no-unused-vars, prefer-const, eqeqeq
+- **Formatter**: Oxfmt (`.oxfmt.toml`) — 2-space indent, single quotes, no semicolons, trailing commas
+- **Git hooks**: Lefthook (`lefthook.yml`) — pre-commit: lint + format check; pre-push: typecheck + test
+- **Dead code**: Knip (`knip.config.ts`) — detect unused files/exports/dependencies
+- **Before committing**: run `bun run check` (format + lint + typecheck)
 
 ### Styling
 
@@ -256,7 +278,11 @@ Tauri expects the sidecar binary at `src-tauri/binaries/sidecar-{target-triple}`
 
 ### Session Lock Prevents Concurrent Chat
 
-`acquireSessionLock()` uses the `runtime_status` field as a simple mutex. If the sidecar crashes mid-stream, the lock may not be released. The session will appear "busy" until `runtime_status` is manually reset to `idle` in the database.
+`acquireSessionLock()` uses an atomic SQL CAS (`UPDATE ... WHERE runtime_status = 'idle'`) to prevent concurrent requests. If the sidecar crashes mid-stream, the lock may not be released. The session will appear "busy" until `runtime_status` is manually reset to `idle` in the database.
+
+### Sidecar Process Cleanup
+
+`SidecarState` in `sidecar.rs` holds the `CommandChild` handle. On app exit (`ExitRequested`), `stop()` calls `child.kill()` to terminate the sidecar process. This prevents orphaned sidecar processes after Tauri quits.
 
 ## Sidecar API Reference
 
@@ -266,6 +292,10 @@ Tauri expects the sidecar binary at `src-tauri/binaries/sidecar-{target-triple}`
 | POST | `/chat` | Send message, receive SSE stream |
 | POST | `/chat/interrupt` | Interrupt active stream |
 | POST | `/chat/permission` | Respond to tool permission request |
+| POST | `/terminal` | Create a new terminal session |
+| GET | `/terminal/:id/ws` | WebSocket for real-time terminal I/O |
+| DELETE | `/terminal/:id` | Kill a terminal session |
+| POST | `/uploads` | File upload handling |
 | GET | `/sessions` | List sessions |
 | POST | `/sessions` | Create session |
 | GET | `/sessions/:id` | Get session |
@@ -310,6 +340,7 @@ Tauri expects the sidecar binary at `src-tauri/binaries/sidecar-{target-triple}`
 
 | Plugin | Purpose |
 |--------|---------|
+| `tauri-plugin-updater` | In-app update support |
 | `tauri-plugin-opener` | Open URLs/files with system default app |
 | `tauri-plugin-shell` | Spawn sidecar process |
 | `tauri-plugin-global-shortcut` | System-wide keyboard shortcuts |
@@ -320,7 +351,7 @@ Tauri expects the sidecar binary at `src-tauri/binaries/sidecar-{target-triple}`
 
 - Conventional Commits: `feat(chat): add streaming indicator`, `fix(sidecar): handle port conflict`
 - Group related changes in a single commit; never bundle unrelated refactors.
-- **Before committing**: ensure TypeScript compiles (`bun run build`)
+- **Before committing**: run `bun run check` (format + lint + typecheck)
 - When the user says "commit", scope to your changes only.
 
 ## Self-Maintenance of AGENTS.md

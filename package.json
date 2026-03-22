@@ -13,7 +13,15 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
+    "lint": "oxlint src/ shared/",
+    "lint:fix": "oxlint src/ shared/ --fix",
+    "format": "oxfmt --write",
+    "format:check": "oxfmt --check",
+    "test": "cd sidecar && bun test",
+    "deadcode": "knip --production --no-progress",
+    "check": "bun run format:check && bun run lint && bun run typecheck",
     "postinstall": "cd sidecar && bun install",
+    "prepare": "lefthook install",
     "setup": "bun install && bun run build:sidecar"
   },
   "dependencies": {
@@ -56,6 +64,10 @@
     "autoprefixer": "^10.4.27",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.2",
+    "knip": "^5.0.0",
+    "lefthook": "^1.11.0",
+    "oxfmt": "^0.7.0",
+    "oxlint": "^1.0.0",
     "typescript": "~5.9.3",
     "vite": "^8.0.1"
   }

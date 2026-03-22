@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicolo-ribaudo/oxlint-schema/refs/heads/main/oxlintrc.schema.json",
+  "rules": {
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_",
+        "destructuredArrayIgnorePattern": "^_"
+      }
+    ],
+    "no-explicit-any": "warn",
+    "no-debugger": "error",
+    "no-empty": "warn",
+    "no-extra-boolean-cast": "warn",
+    "no-constant-condition": "warn",
+    "no-duplicate-imports": "error",
+    "prefer-const": "warn",
+    "eqeqeq": ["warn", "smart"],
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+    "react-refresh/only-export-components": ["warn", { "allowConstantExport": true }]
+  },
+  "ignorePatterns": ["dist/", "dist-electron/", "release/", "node_modules/", "src-tauri/target/"]
+}
