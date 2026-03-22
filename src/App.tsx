@@ -1,7 +1,5 @@
-import { useState, useEffect } from 'react'
 import { AppShell } from './components/layout/AppShell'
 import { ErrorBoundary } from './components/layout/ErrorBoundary'
-import { OnboardingWizard } from './components/setup/OnboardingWizard'
 import { useTheme } from './hooks/useTheme'
 import { useSidecar } from './hooks/useSidecar'
 import logo from './assets/logo.png'
@@ -9,27 +7,10 @@ import './App.css'
 
 function App() {
   useTheme()
-  const { baseUrl, ready } = useSidecar()
-  const [showOnboarding, setShowOnboarding] = useState(false)
-  const [checked, setChecked] = useState(false)
-
-  // Check if onboarding is needed
-  useEffect(() => {
-    if (!baseUrl || !ready) return
-    fetch(`${baseUrl}/settings/onboarding_complete`)
-      .then((res) => res.json())
-      .then((data) => {
-        setShowOnboarding(data.value !== 'true')
-        setChecked(true)
-      })
-      .catch(() => {
-        setShowOnboarding(true)
-        setChecked(true)
-      })
-  }, [baseUrl, ready])
+  const { ready } = useSidecar()
 
   // Loading state while sidecar connects
-  if (!ready || !checked) {
+  if (!ready) {
     return (
       <div className="flex h-screen items-center justify-center bg-white dark:bg-zinc-950">
         <div className="text-center space-y-4">
@@ -42,11 +23,7 @@ function App() {
 
   return (
     <ErrorBoundary>
-      {showOnboarding ? (
-        <OnboardingWizard onComplete={() => setShowOnboarding(false)} />
-      ) : (
-        <AppShell />
-      )}
+      <AppShell />
     </ErrorBoundary>
   )
 }

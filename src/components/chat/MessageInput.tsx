@@ -9,7 +9,7 @@ import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from 're
 import { Send, Square, CornerDownLeft, ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useSidecar } from '../../hooks/useSidecar'
-import type { ProviderModelGroup, ProviderModelOption } from '../../../shared/types'
+import type { ProviderModelGroup } from '../../../shared/types'
 
 interface MessageInputProps {
   onSend: (content: string) => void
@@ -134,7 +134,7 @@ export function MessageInput({
   const currentLabel = findModelLabel(groups, currentProviderId, currentModel)
 
   return (
-    <div className="px-4 pb-4 pt-2">
+    <div className="bg-white/80 dark:bg-zinc-950/80 backdrop-blur-lg px-4 pb-4 pt-2">
       <div
         className={cn(
           'relative flex flex-col',

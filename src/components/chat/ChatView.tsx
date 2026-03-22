@@ -242,37 +242,16 @@ export function ChatView() {
     }
   }, [isStreaming, streamingText, addMessage, clear])
 
-  // Format directory display (show last 2 segments)
-  const formatDir = (dir: string): string => {
-    const parts = dir.split('/')
-    if (parts.length <= 2) return dir
-    return '.../' + parts.slice(-2).join('/')
-  }
-
-  // Welcome / empty state — no active session
+  // Empty state — no active session (just show input at bottom)
   if (!activeSessionId) {
-    const cachedDir = getEffectiveDir()
     return (
       <div className="flex-1 flex flex-col min-h-0">
-        {/* Welcome area */}
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <img src={logo} alt="小龙虾" className="w-16 h-16 mx-auto" />
-            <h2 className="text-2xl font-semibold text-zinc-700 dark:text-zinc-300">小龙虾</h2>
-            <p className="text-zinc-500 dark:text-zinc-400">输入消息开始新对话</p>
-            {/* Working directory indicator */}
-            <button
-              onClick={async () => {
-                await pickDirectory()
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 transition-colors"
-              title={cachedDir || '点击选择工作目录'}
-            >
-              📁 {cachedDir ? formatDir(cachedDir) : '选择工作目录'}
-            </button>
+          <div className="text-center space-y-3">
+            <img src={logo} alt="小龙虾" className="w-12 h-12 mx-auto opacity-40" />
+            <p className="text-sm text-zinc-400 dark:text-zinc-500">输入消息开始新对话</p>
           </div>
         </div>
-        {/* Input with model selector */}
         <MessageInput
           onSend={handleSendNew}
           isStreaming={false}
@@ -288,20 +267,7 @@ export function ChatView() {
 
   return (
     <FileDropZone onFilesDropped={handleFilesDropped} disabled={!ready}>
-      {/* Session header — title + working dir only (model selector is in input) */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-200 dark:border-zinc-800 min-w-0">
-        <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
-          {activeSession?.title || 'New Chat'}
-        </div>
-        {activeSession?.working_directory && (
-          <span
-            className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 truncate max-w-[200px]"
-            title={activeSession.working_directory}
-          >
-            📁 {formatDir(activeSession.working_directory)}
-          </span>
-        )}
-      </div>
+      {/* Session header removed — now in UnifiedTopBar */}
 
       <MessageList
         messages={messages}

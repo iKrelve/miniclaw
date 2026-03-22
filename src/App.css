@@ -5,9 +5,37 @@
   line-height: 1.5;
   font-weight: 400;
   color-scheme: light dark;
+
+  /* Sidebar semantic tokens (CodePilot-aligned) */
+  --sidebar: #fafafa;
+  --sidebar-foreground: #18181b;
+  --sidebar-border: #e4e4e7;
+  --sidebar-accent: #f4f4f5;
+  --sidebar-accent-foreground: #27272a;
+  --muted-foreground: #71717a;
+}
+
+.dark {
+  --sidebar: #0a0a0a;
+  --sidebar-foreground: #fafafa;
+  --sidebar-border: #27272a;
+  --sidebar-accent: #1c1c1e;
+  --sidebar-accent-foreground: #e4e4e7;
+  --muted-foreground: #a1a1aa;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+}
+
+/* macOS title bar drag region */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] a,
+[data-tauri-drag-region] input {
+  -webkit-app-region: no-drag;
 }
