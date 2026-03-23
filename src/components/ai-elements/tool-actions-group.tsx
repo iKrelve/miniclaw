@@ -121,11 +121,17 @@ function getRunningDescription(tools: ToolAction[]): string {
 export function ToolActionsGroup({ tools, isStreaming = false }: ToolActionsGroupProps) {
   const hasRunningTool = tools.some((t) => t.result === undefined)
 
+  // Auto-expand when a tool result contains a screenshot path
+  const hasScreenshot = tools.some(
+    (t) => t.result && /Screenshot saved to\s+\S+\.(?:jpg|jpeg|png)/i.test(t.result),
+  )
+
   // Track manual toggle
   const [userExpanded, setUserExpanded] = useState<boolean | null>(null)
 
-  // Auto-expand when streaming, respect user override
-  const expanded = userExpanded !== null ? userExpanded : hasRunningTool || isStreaming
+  // Auto-expand when streaming, has running tools, or contains screenshots
+  const expanded =
+    userExpanded !== null ? userExpanded : hasRunningTool || isStreaming || hasScreenshot
 
   if (tools.length === 0) return null
 

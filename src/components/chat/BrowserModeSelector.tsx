@@ -23,8 +23,8 @@ interface BrowserModeSelectorProps {
 
 const LABELS: Record<BrowserMode, string> = {
   off: '关闭',
-  headed: '有头模式',
-  headless: '无头模式',
+  headed: '前台模式',
+  headless: '后台模式',
 }
 
 const ICONS: Record<BrowserMode, typeof Globe> = {

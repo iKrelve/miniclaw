@@ -435,7 +435,11 @@ function consumeStreamInBackground(sessionId: string, opts: BackgroundStreamOpti
                 /* best effort */
               }
             }
-            if (sd.model) updateSessionModel(sessionId, sd.model)
+            // Only update session model if no user-selected model exists.
+            // SDK reports full model IDs (e.g. "claude-sonnet-4-20250514") which
+            // would overwrite the user's shorthand ("sonnet") and break the
+            // model selector's matching logic.
+            if (sd.model && !opts.model) updateSessionModel(sessionId, sd.model)
           } catch {
             /* skip */
           }

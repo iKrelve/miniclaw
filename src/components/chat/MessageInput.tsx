@@ -504,7 +504,8 @@ export function MessageInput({
                       </div>
                       {group.models.map((m) => {
                         const active =
-                          m.value === currentModel && group.provider_id === currentProviderId
+                          modelsMatch(m.value, currentModel) &&
+                          group.provider_id === currentProviderId
                         return (
                           <button
                             key={`${group.provider_id}-${m.value}`}
@@ -564,18 +565,37 @@ export function MessageInput({
   )
 }
 
+/**
+ * Check if two model identifiers refer to the same model.
+ * Handles shorthand ("sonnet") vs full SDK ID ("claude-sonnet-4-20250514")
+ * by checking if the shorter string is a substring of the longer one.
+ */
+function modelsMatch(a: string, b: string): boolean {
+  if (a === b) return true
+  const la = a.toLowerCase()
+  const lb = b.toLowerCase()
+  return la.includes(lb) || lb.includes(la)
+}
+
 /** Find the display label for the current model in the groups. */
 function findModelLabel(groups: ProviderModelGroup[], providerId: string, modelId: string): string {
   // Try exact match (provider + model)
   const group = groups.find((g) => g.provider_id === providerId)
   if (group) {
-    const model = group.models.find((m) => m.value === modelId)
-    if (model) return model.label
+    const exact = group.models.find((m) => m.value === modelId)
+    if (exact) return exact.label
+    // Fuzzy match: shorthand vs full model ID
+    const fuzzy = group.models.find((m) => modelsMatch(m.value, modelId))
+    if (fuzzy) return fuzzy.label
   }
-  // Fallback: search all groups for the model
+  // Fallback: search all groups
   for (const g of groups) {
-    const model = g.models.find((m) => m.value === modelId)
-    if (model) return model.label
+    const exact = g.models.find((m) => m.value === modelId)
+    if (exact) return exact.label
+  }
+  for (const g of groups) {
+    const fuzzy = g.models.find((m) => modelsMatch(m.value, modelId))
+    if (fuzzy) return fuzzy.label
   }
   return modelId || 'Select model'
 }
