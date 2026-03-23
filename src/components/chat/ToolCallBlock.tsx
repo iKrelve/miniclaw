@@ -20,6 +20,7 @@ import {
 import { cn } from '../../lib/utils'
 import { Button } from '../ui/button'
 import { CodeBlock } from '../ai-elements/code-block'
+import { useSidecar } from '../../hooks/useSidecar'
 
 type ToolStatus = 'running' | 'success' | 'error'
 
@@ -211,6 +212,30 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+// ── Screenshot path extraction ──────────────────────────────────────
+
+const SCREENSHOT_PATH_RE = /Screenshot saved to\s+(\S+\.(?:jpg|jpeg|png))/i
+
+/** Extract screenshot file path from a Bash tool result string. */
+function extractScreenshotPath(result: string): string | null {
+  // Direct match in result text
+  const match = result.match(SCREENSHOT_PATH_RE)
+  if (match) return match[1]
+
+  // Also check inside JSON wrapper: {"success":true,"data":"Screenshot saved to ..."}
+  try {
+    const parsed = JSON.parse(result)
+    const data = typeof parsed === 'object' && parsed?.data
+    if (typeof data === 'string') {
+      const inner = data.match(SCREENSHOT_PATH_RE)
+      if (inner) return inner[1]
+    }
+  } catch {
+    // not JSON
+  }
+  return null
+}
+
 // ── Icon color per category ────────────────────────────────────────────
 
 function getIconColor(category: ToolCategory): string {
@@ -236,12 +261,14 @@ function ToolContent({
   result,
   status,
   filePath,
+  baseUrl,
 }: {
   category: ToolCategory
   input: unknown
   result?: string
   status: ToolStatus
   filePath: string
+  baseUrl?: string | null
 }) {
   switch (category) {
     case 'read':
@@ -294,6 +321,8 @@ function ToolContent({
     case 'bash': {
       const inp = input as Record<string, unknown> | undefined
       const command = (inp?.command || inp?.cmd || '') as string
+      const screenshotPath = result ? extractScreenshotPath(result) : null
+
       return (
         <div className="space-y-2">
           {command && (
@@ -302,7 +331,17 @@ function ToolContent({
               <span className="whitespace-pre-wrap break-all">{command}</span>
             </div>
           )}
-          {result && (
+          {screenshotPath && baseUrl && (
+            <div className="rounded-lg overflow-hidden border border-border/50">
+              <img
+                src={`${baseUrl}/browser/screenshot?path=${encodeURIComponent(screenshotPath)}`}
+                alt="Browser screenshot"
+                className="w-full max-h-[400px] object-contain bg-zinc-950"
+                loading="lazy"
+              />
+            </div>
+          )}
+          {result && !screenshotPath && (
             <div className="rounded-md bg-zinc-950 p-3 font-mono text-xs text-zinc-300 max-h-60 overflow-auto whitespace-pre-wrap break-all">
               {result.slice(0, 5000)}
             </div>
@@ -383,11 +422,14 @@ export function ToolCallBlock({
   status = result !== undefined ? (isError ? 'error' : 'success') : 'running',
   duration,
 }: ToolCallBlockProps) {
-  const [expanded, setExpanded] = useState(false)
+  const { baseUrl } = useSidecar()
   const category = getToolCategory(name)
   const toolIcon = getToolIcon(category)
   const summary = getToolSummary(name, input, category)
   const filePath = getFilePath(input)
+  // Auto-expand tool calls that contain screenshots so the image is visible
+  const hasScreenshot = !!(result && extractScreenshotPath(result))
+  const [expanded, setExpanded] = useState(hasScreenshot)
 
   const borderColor = {
     running: 'border-primary/70',
@@ -451,6 +493,7 @@ export function ToolCallBlock({
               result={result}
               status={status}
               filePath={filePath}
+              baseUrl={baseUrl}
             />
           </div>
         </div>

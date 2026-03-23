@@ -88,7 +88,7 @@ export interface UseSSEStreamResult {
       systemPromptAppend?: string
       files?: FileAttachment[]
     },
-  ) => void
+  ) => void | Promise<void>
   /**
    * Send the first message of a just-created session.
    * Accepts explicit targetSessionId because React may not have processed
@@ -105,7 +105,7 @@ export interface UseSSEStreamResult {
       systemPromptAppend?: string
       files?: FileAttachment[]
     },
-  ) => void
+  ) => void | Promise<void>
   /** Interrupt the active stream */
   interrupt: () => void
 }
@@ -555,7 +555,7 @@ export function useSSEStream(baseUrl: string | null, sessionId: string | null): 
   // ==========================================
 
   const send = useCallback(
-    (
+    async (
       content: string,
       options?: {
         model?: string
@@ -588,43 +588,47 @@ export function useSSEStream(baseUrl: string | null, sessionId: string | null): 
       // Reset streaming state for new turn
       resetStreamState()
 
-      // POST + SSE
-      const abort = startSSE(baseUrl, sessionId)
+      // Await POST so the sidecar resets the EventBuffer (done=false) before we
+      // subscribe via SSE. Without this, the SSE endpoint sees the previous
+      // conversation's done=true state and immediately closes the connection,
+      // causing all new events to be lost.
+      try {
+        const res = await fetch(`${baseUrl}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: sessionId,
+            content,
+            model: options?.model,
+            mode: options?.mode,
+            provider_id: options?.providerId,
+            systemPromptAppend: options?.systemPromptAppend,
+            files: options?.files,
+          }),
+        })
 
-      fetch(`${baseUrl}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          content,
-          model: options?.model,
-          mode: options?.mode,
-          provider_id: options?.providerId,
-          systemPromptAppend: options?.systemPromptAppend,
-          files: options?.files,
-        }),
-        signal: abort.signal,
-      })
-        .then((res) => {
-          if (!res.ok) {
-            res
-              .json()
-              .catch(() => ({ error: 'Request failed' }))
-              .then((err) => {
-                if (activeSessionRef.current === sessionId) {
-                  setStreamEvents((prev) => [
-                    ...prev,
-                    { type: 'error', data: (err as { error?: string }).error || 'Request failed' },
-                  ])
-                }
-              })
-          }
-        })
-        .catch((err) => {
-          if ((err as Error).name !== 'AbortError' && activeSessionRef.current === sessionId) {
-            setStreamEvents((prev) => [...prev, { type: 'error', data: (err as Error).message }])
-          }
-        })
+        // Guard: user may have switched sessions during the await
+        if (activeSessionRef.current !== sessionId) return
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: 'Request failed' }))
+          setStreamEvents((prev) => [
+            ...prev,
+            { type: 'error', data: (err as { error?: string }).error || 'Request failed' },
+          ])
+          return
+        }
+      } catch (err) {
+        if (activeSessionRef.current !== sessionId) return
+        setStreamEvents((prev) => [...prev, { type: 'error', data: (err as Error).message }])
+        return
+      }
+
+      // POST succeeded → sidecar has reset the buffer and started the SDK stream.
+      // Now subscribe to receive events.
+      if (activeSessionRef.current === sessionId) {
+        startSSE(baseUrl, sessionId)
+      }
     },
     [baseUrl, sessionId, resetStreamState],
   )
@@ -634,7 +638,7 @@ export function useSSEStream(baseUrl: string | null, sessionId: string | null): 
   // ==========================================
 
   const sendNew = useCallback(
-    (
+    async (
       targetSessionId: string,
       content: string,
       options?: {
@@ -670,47 +674,45 @@ export function useSSEStream(baseUrl: string | null, sessionId: string | null): 
         },
       ])
 
-      // Reset + start SSE
       resetStreamState()
-      const abort = startSSE(baseUrl, targetSessionId)
 
-      fetch(`${baseUrl}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: targetSessionId,
-          content,
-          model: options?.model,
-          mode: options?.mode,
-          provider_id: options?.providerId,
-          systemPromptAppend: options?.systemPromptAppend,
-          files: options?.files,
-        }),
-        signal: abort.signal,
-      })
-        .then((res) => {
-          if (!res.ok) {
-            res
-              .json()
-              .catch(() => ({ error: 'Request failed' }))
-              .then((err) => {
-                if (activeSessionRef.current === targetSessionId) {
-                  setStreamEvents((prev) => [
-                    ...prev,
-                    { type: 'error', data: (err as { error?: string }).error || 'Request failed' },
-                  ])
-                }
-              })
-          }
+      // Await POST so the sidecar acquires the session lock and resets the
+      // EventBuffer before we subscribe via SSE. This guarantees the SSE
+      // endpoint will never see a stale done=true from a previous conversation.
+      try {
+        const res = await fetch(`${baseUrl}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: targetSessionId,
+            content,
+            model: options?.model,
+            mode: options?.mode,
+            provider_id: options?.providerId,
+            systemPromptAppend: options?.systemPromptAppend,
+            files: options?.files,
+          }),
         })
-        .catch((err) => {
-          if (
-            (err as Error).name !== 'AbortError' &&
-            activeSessionRef.current === targetSessionId
-          ) {
-            setStreamEvents((prev) => [...prev, { type: 'error', data: (err as Error).message }])
-          }
-        })
+
+        if (activeSessionRef.current !== targetSessionId) return
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: 'Request failed' }))
+          setStreamEvents((prev) => [
+            ...prev,
+            { type: 'error', data: (err as { error?: string }).error || 'Request failed' },
+          ])
+          return
+        }
+      } catch (err) {
+        if (activeSessionRef.current !== targetSessionId) return
+        setStreamEvents((prev) => [...prev, { type: 'error', data: (err as Error).message }])
+        return
+      }
+
+      if (activeSessionRef.current === targetSessionId) {
+        startSSE(baseUrl, targetSessionId)
+      }
     },
     [baseUrl, resetStreamState],
   )

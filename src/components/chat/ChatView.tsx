@@ -47,10 +47,10 @@ export function ChatView() {
     () => activeSession?.permission_profile || 'default',
   )
 
-  // Browser mode
+  // Browser mode — poll status from sidecar
   const [browserMode, setBrowserMode] = useState<BrowserMode>('off')
 
-  useEffect(() => {
+  const refreshBrowserStatus = useCallback(() => {
     if (!baseUrl) return
     fetch(`${baseUrl}/browser/status`)
       .then((res) => res.json())
@@ -59,6 +59,21 @@ export function ChatView() {
       )
       .catch(() => setBrowserMode('off'))
   }, [baseUrl])
+
+  // Initial fetch on mount
+  useEffect(() => {
+    refreshBrowserStatus()
+  }, [refreshBrowserStatus])
+
+  // Auto-refresh when tool results arrive that involve browser-action.
+  // This catches the case where the AI auto-starts Chrome via CLI.
+  useEffect(() => {
+    if (browserMode !== 'off') return
+    const hasBrowserResult = stream.toolResults.some(
+      (r) => r.content?.includes('browser') || r.content?.includes('Screenshot'),
+    )
+    if (hasBrowserResult) refreshBrowserStatus()
+  }, [stream.toolResults, browserMode, refreshBrowserStatus])
 
   const handleBrowserModeChange = useCallback((mode: BrowserMode) => setBrowserMode(mode), [])
 

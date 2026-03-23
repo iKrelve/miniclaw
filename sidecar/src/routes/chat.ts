@@ -176,7 +176,12 @@ chatRoutes.get('/events/:id', (c) => {
   const afterParam = c.req.query('after')
   const afterIndex = afterParam != null ? parseInt(afterParam, 10) : undefined
 
-  logger.info('chat', 'SSE subscribe', { sessionId, afterIndex })
+  // Capture the buffer generation at subscribe time. If the buffer is later
+  // reset() for a new conversation, the generation changes and we know any
+  // stale done=true is from a previous conversation — not the current one.
+  const subscribeGeneration = eventBuffer.getGeneration(sessionId)
+
+  logger.info('chat', 'SSE subscribe', { sessionId, afterIndex, generation: subscribeGeneration })
 
   const stream = new ReadableStream({
     start(controller) {
@@ -196,8 +201,13 @@ chatRoutes.get('/events/:id', (c) => {
         (event) => {
           send(event.type, event.data, event.index)
 
-          // Close the SSE connection after 'done' event
-          if (event.type === 'done') {
+          // Close the SSE connection after 'done' event — but only if it
+          // belongs to the same generation we subscribed to. A done event
+          // from a stale (pre-reset) buffer should not terminate us.
+          if (
+            event.type === 'done' &&
+            eventBuffer.getGeneration(sessionId) === subscribeGeneration
+          ) {
             cleanup()
             try {
               controller.close()
@@ -235,11 +245,16 @@ chatRoutes.get('/events/:id', (c) => {
       })
 
       // If the buffer already completed before we subscribed and all events
-      // were replayed in subscribe(), close the stream.
-      if (eventBuffer.isDone(sessionId) && !c.req.raw.signal.aborted) {
-        // Events were already replayed by subscribe(). Close after a brief delay
-        // to let the flush happen.
+      // were replayed in subscribe(), close the stream — but only if the
+      // generation hasn't changed (i.e. no reset() happened since we captured it).
+      if (
+        eventBuffer.isDone(sessionId) &&
+        eventBuffer.getGeneration(sessionId) === subscribeGeneration &&
+        !c.req.raw.signal.aborted
+      ) {
         setTimeout(() => {
+          // Double-check generation hasn't changed during the setTimeout delay
+          if (eventBuffer.getGeneration(sessionId) !== subscribeGeneration) return
           cleanup()
           try {
             controller.close()

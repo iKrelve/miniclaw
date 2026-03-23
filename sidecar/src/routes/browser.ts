@@ -2,13 +2,16 @@
  * Browser HTTP routes — Chrome lifecycle + browser action execution.
  *
  * Routes:
- *   POST /browser/start    — Start external Chrome
- *   POST /browser/stop     — Stop Chrome + all daemons
- *   GET  /browser/status   — Chrome status + agent-browser availability
- *   POST /browser/action   — Execute a browser command (called by miniclaw-desk CLI)
+ *   POST /browser/start       — Start external Chrome
+ *   POST /browser/stop        — Stop Chrome + all daemons
+ *   GET  /browser/status      — Chrome status + agent-browser availability
+ *   POST /browser/action      — Execute a browser command (called by miniclaw-desk CLI)
+ *   GET  /browser/screenshot   — Serve a screenshot image for inline rendering in chat
  */
 
 import { Hono } from 'hono'
+import { existsSync, readFileSync } from 'fs'
+import { extname } from 'path'
 import { chromeManager } from '../services/chrome-manager'
 import {
   shutdownBrowserBridges,
@@ -87,6 +90,34 @@ browserRoutes.post('/action', async (c) => {
     logger.error('browser', 'POST /browser/action failed', { error: msg })
     return c.json({ success: false, error: msg }, 500)
   }
+})
+
+/**
+ * GET /browser/screenshot?path=... — Serve a screenshot image file.
+ * Used by the chat UI to render browser screenshots inline.
+ * Only serves files under the agent-browser screenshot directory for security.
+ */
+browserRoutes.get('/screenshot', (c) => {
+  const filePath = c.req.query('path')
+  if (!filePath) return c.json({ error: 'path is required' }, 400)
+
+  // Security: only serve agent-browser screenshot files
+  if (!filePath.includes('.agent-browser') || !filePath.includes('screenshot')) {
+    return c.json({ error: 'Access denied: only agent-browser screenshots allowed' }, 403)
+  }
+
+  if (!existsSync(filePath)) return c.json({ error: 'Screenshot not found' }, 404)
+
+  const ext = extname(filePath).toLowerCase()
+  const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
+
+  const data = readFileSync(filePath)
+  return new Response(data, {
+    headers: {
+      'Content-Type': mime,
+      'Cache-Control': 'public, max-age=86400',
+    },
+  })
 })
 
 export default browserRoutes

@@ -28,6 +28,12 @@ interface SessionBuffer {
   done: boolean
   /** Timer handle for delayed GC after completion */
   gcTimer: ReturnType<typeof setTimeout> | null
+  /**
+   * Monotonically increasing generation counter. Incremented on each reset()
+   * so SSE endpoints can distinguish "done from a previous conversation" from
+   * "done from the current conversation".
+   */
+  generation: number
 }
 
 class EventBuffer {
@@ -86,6 +92,11 @@ class EventBuffer {
     return this.buffers.get(sessionId)?.done ?? false
   }
 
+  /** Current generation of the session's buffer (0 if no buffer exists) */
+  getGeneration(sessionId: string): number {
+    return this.buffers.get(sessionId)?.generation ?? 0
+  }
+
   /** Whether a buffer exists for this session (conversation in progress or recently finished) */
   has(sessionId: string): boolean {
     return this.buffers.has(sessionId)
@@ -104,10 +115,12 @@ class EventBuffer {
       buf.events = []
       buf.done = false
       buf.gcTimer = null
+      buf.generation++
       logger.debug('event-buffer', 'Reset buffer (listeners preserved)', {
         sessionId,
         oldEventCount: oldCount,
         listenerCount: buf.listeners.size,
+        generation: buf.generation,
       })
     }
   }
@@ -146,7 +159,7 @@ class EventBuffer {
   private ensure(sessionId: string): SessionBuffer {
     let buf = this.buffers.get(sessionId)
     if (!buf) {
-      buf = { events: [], listeners: new Set(), done: false, gcTimer: null }
+      buf = { events: [], listeners: new Set(), done: false, gcTimer: null, generation: 0 }
       this.buffers.set(sessionId, buf)
     }
     return buf

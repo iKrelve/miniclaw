@@ -413,6 +413,7 @@ The singleton survives HMR via `globalThis` caching.
 ### Core Principles
 
 - **Never use simplified or lazy solutions** — always use the correct, architecturally sound approach.
+- **Prefer the most reasonable and elegant solution, not the shortest one** — when multiple approaches exist, choose the one with the best architecture, maintainability, and clarity. Brevity must never come at the cost of correctness, readability, or long-term quality. A few extra lines of well-structured code are always preferable to a clever one-liner that obscures intent.
 - **Verify in code, do not guess** — read source code before concluding on a bug.
 - **Do not run commands automatically** unless the user explicitly requests it.
 - **Prefer mature open-source libraries** — never hand-write components that have well-established solutions.
